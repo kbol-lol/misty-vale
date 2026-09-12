@@ -54,6 +54,25 @@ TitanBot offers a complete suite of tools for Discord server management and comm
 - **Emoji Selection** - Reaction-based system
 - **Multi-role Support** - Multiple role options
 
+### Reaction Limiter
+- **Per-message caps** - Limits how many people can use a selected emoji on any message
+- **Configurable limits** - Edit `src/config/reactionLimiter.js` to set each emoji's cap
+
+Edit the `limits` object in `src/config/reactionLimiter.js`. The value is the
+maximum number of human users who may react with that emoji to one message.
+For custom emoji, use the emoji's numeric Discord ID as the key:
+
+```js
+limits: {
+  '✅': 25,
+  '❌': 10,
+  '123456789012345678': 5,
+}
+```
+
+The bot needs the **Manage Messages** permission in channels where reaction
+limits should be enforced.
+
 </td>
 <td width="50%" valign="top">
 
