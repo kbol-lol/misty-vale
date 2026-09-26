@@ -1,12 +1,12 @@
 import { Events } from 'discord.js';
-import { reactionLimiterConfig } from '../config/reactionLimiter.js';
+import { getGuildConfig } from '../services/config/guildConfig.js';
 import { logger } from '../utils/logger.js';
 import { Mutex } from '../utils/mutex.js';
 
 export default {
   name: Events.MessageReactionAdd,
   async execute(reaction, user) {
-    if (user.bot || !reactionLimiterConfig.enabled) {
+    if (user.bot) {
       return;
     }
 
@@ -24,8 +24,16 @@ export default {
         return;
       }
 
+      // Read per-server config for every event so /reactionlimit changes take
+      // effect immediately without requiring a bot restart.
+      const guildConfig = await getGuildConfig(message.client, message.guild.id);
+      const limiterConfig = guildConfig.reactionLimiter;
+      if (!limiterConfig?.enabled) {
+        return;
+      }
+
       const emojiKey = getEmojiConfigKey(reaction.emoji);
-      const limit = reactionLimiterConfig.limits?.[emojiKey];
+      const limit = limiterConfig.limits?.[emojiKey];
       if (!Number.isSafeInteger(limit) || limit < 0) {
         return;
       }

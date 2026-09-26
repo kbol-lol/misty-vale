@@ -57,6 +57,13 @@ const VerificationConfigSchema = z
   })
   .optional();
 
+const ReactionLimiterConfigSchema = z
+  .object({
+    enabled: z.boolean().default(true),
+    limits: z.record(z.number().int().min(0).max(100000)).default({}),
+  })
+  .default({ enabled: true, limits: {} });
+
 export const GuildConfigSchema = z
   .object({
     prefix: z.string().optional(),
@@ -75,6 +82,7 @@ export const GuildConfigSchema = z
     disabledCategories: z.record(z.boolean()).optional(),
     logging: LoggingConfigSchema.optional(),
     ticketLogging: TicketLoggingSchema.optional(),
+    reactionLimiter: ReactionLimiterConfigSchema.optional(),
     enableLogging: z.boolean().optional(),
     verification: VerificationConfigSchema
   })
