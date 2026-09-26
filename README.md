@@ -1,4 +1,4 @@
-# TitanBot - Ultimate Discord Bot
+# TitanBot - Ultimate Discord Bot TESTTTT
 
 **TitanBot** is a powerful, feature-rich Discord bot designed to enhance your server experience with comprehensive moderation tools, engaging economy systems, utility features, and much more. Built with modern Discord.js v14 and PostgreSQL for optimal performance and data persistence.
 
