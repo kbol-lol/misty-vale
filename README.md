@@ -38,6 +38,7 @@ TitanBot offers a complete suite of tools for Discord server management and comm
 - **Random Facts** - Learn something new
 - **Wanted Poster** - Create fun wanted images
 - **Text Reversal** - Reverse any text
+- **Rock-Paper-Scissors** - Invite another server member to a configurable multi-round match
 
 ### Advanced Ticket System
 - **Claim & Priority** - Staff ticket management
@@ -108,6 +109,16 @@ limits should be enforced.
 </td>
 </tr>
 </table>
+
+### Rock-Paper-Scissors
+
+Use `/rps` to post a public invitation in the current channel. Another member joins
+with the checkmark, then both players lock in a move with the rock, paper, or scissors
+buttons. Add the optional `rounds` value to play a match with multiple rounds.
+
+Customize the embed color, button emojis, default and maximum round counts, timeout,
+and displayed text in `src/config/rps.js`. Custom Discord emojis can be supplied in
+the standard `<:emoji_name:emoji_id>` or `<a:emoji_name:emoji_id>` format.
 
 <a name="quick-setup"></a>
 ## Quick Setup (Recommended for non-coders)

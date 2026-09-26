@@ -9,6 +9,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const MAX_COMMANDS = 100;
 const COMMAND_COUNT_WARN_THRESHOLD = 90;
+const DEREGISTERED_COMMAND_CATEGORIES = new Set(['Economy']);
 
 function getSubcommandInfo(commandData) {
     const subcommands = [];
@@ -132,6 +133,11 @@ function collectCommandPayloads(client) {
         }
 
         const commandName = command.data.name;
+        if (DEREGISTERED_COMMAND_CATEGORIES.has(command.category)) {
+            logger.info(`Deregistering Economy slash command /${commandName}`);
+            continue;
+        }
+
         logger.debug(`Processing command for registration: ${commandName}`);
 
         if (registeredNames.has(commandName)) {
@@ -269,9 +275,32 @@ export async function registerCommands(client, options = {}) {
     try {
         const { commands, totalSubcommands } = collectCommandPayloads(client);
         await registerGlobalCommands(client, clientId, commands, totalSubcommands);
+        await deregisterGuildScopedCommand(client, clientId, 'rps');
     } catch (error) {
         logger.error('Error registering commands:', error);
         throw error;
+    }
+}
+
+async function deregisterGuildScopedCommand(client, clientId, commandName) {
+    const guilds = [...(client.guilds?.cache?.values?.() || [])];
+    for (const guild of guilds) {
+        const endpoint = `/applications/${clientId}/guilds/${guild.id}/commands`;
+        try {
+            const registeredCommands = await client.rest.get(endpoint);
+            const existingCommands = registeredCommands.filter(
+                (registered) => registered.name === commandName
+                    && (registered.type ?? 1) === 1,
+            );
+            for (const existing of existingCommands) {
+                await client.rest.delete(`${endpoint}/${existing.id}`);
+            }
+            if (existingCommands.length) {
+                logger.info(`Removed temporary guild-scoped /${commandName} command from ${guild.name} (${guild.id})`);
+            }
+        } catch (error) {
+            logger.error(`Failed to remove guild-scoped /${commandName} command from ${guild.name} (${guild.id}):`, error);
+        }
     }
 }
 
