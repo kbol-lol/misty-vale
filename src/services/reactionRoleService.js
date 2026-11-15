@@ -3,6 +3,12 @@
 import { logger } from '../utils/logger.js';
 import { createError, ErrorTypes } from '../utils/errorHandler.js';
 import { getReactionRoleKey, getReactionRolesPrefix } from '../utils/database/keys.js';
+import { Mutex } from '../utils/mutex.js';
+import {
+    addReactionRoleMappingToPanel,
+    ReactionRoleMappingError,
+    removeReactionRoleMappingFromPanel,
+} from '../utils/reactionRoleMappings.js';
 
 const MAX_ROLES_PER_MESSAGE = 25;
 
@@ -13,7 +19,8 @@ const DANGEROUS_PERMISSIONS = [
     'ManageChannels',
     'ManageWebhooks',
     'BanMembers',
-    'KickMembers'
+    'KickMembers',
+    'MentionEveryone',
 ];
 
 function validateGuildId(guildId) {
@@ -185,6 +192,96 @@ export async function createReactionRoleMessage(client, guildId, channelId, mess
             { guildId, messageId, originalError: error.message }
         );
     }
+}
+
+export async function createReactionRolePanel(client, guildId, channelId, messageId, {
+    title,
+    description,
+    imageUrl = null,
+    imageName = null,
+}) {
+    validateGuildId(guildId);
+    validateMessageId(messageId);
+
+    if (!channelId || typeof channelId !== 'string' || !/^\d{17,19}$/.test(channelId)) {
+        throw createError(
+            `Invalid channel ID: ${channelId}`,
+            ErrorTypes.VALIDATION,
+            'Invalid channel ID provided.',
+            { channelId },
+        );
+    }
+
+    const data = {
+        guildId,
+        channelId,
+        messageId,
+        mode: 'reaction',
+        title,
+        description,
+        imageUrl,
+        imageName,
+        roles: [],
+        reactionRoles: [],
+        createdAt: new Date().toISOString(),
+    };
+
+    await client.db.set(getReactionRoleKey(guildId, messageId), data);
+    logger.info(`Created reaction-role panel ${messageId} in guild ${guildId}`);
+    return data;
+}
+
+export async function addReactionRoleMapping(client, guildId, messageId, mapping) {
+    validateGuildId(guildId);
+    validateMessageId(messageId);
+    validateRoleId(mapping?.roleId);
+    await validateRoleSafety(client, guildId, mapping.roleId);
+
+    return Mutex.runExclusive(`reaction-role-panel:${guildId}:${messageId}`, async () => {
+        const data = await getReactionRoleMessage(client, guildId, messageId);
+        if (!data || data.mode !== 'reaction') {
+            throw createError(
+                `Reaction-role panel ${messageId} was not found`,
+                ErrorTypes.CONFIGURATION,
+                'This is not an active reaction-role panel.',
+                { guildId, messageId },
+            );
+        }
+
+        try {
+            addReactionRoleMappingToPanel(data, mapping);
+        } catch (error) {
+            if (!(error instanceof ReactionRoleMappingError)) throw error;
+            throw createError(
+                error.message,
+                ErrorTypes.VALIDATION,
+                error.message,
+                { guildId, messageId, roleId: mapping.roleId, reason: error.code },
+            );
+        }
+
+        await client.db.set(getReactionRoleKey(guildId, messageId), data);
+        logger.info(`Added reaction-role mapping to message ${messageId} in guild ${guildId}`);
+        return data;
+    });
+}
+
+export async function removeReactionRoleMapping(client, guildId, messageId, roleId) {
+    validateGuildId(guildId);
+    validateMessageId(messageId);
+    validateRoleId(roleId);
+
+    return Mutex.runExclusive(`reaction-role-panel:${guildId}:${messageId}`, async () => {
+        const data = await getReactionRoleMessage(client, guildId, messageId);
+        if (!data || data.mode !== 'reaction') return null;
+
+        const mapping = removeReactionRoleMappingFromPanel(data, roleId);
+        if (!mapping) return null;
+
+        await client.db.set(getReactionRoleKey(guildId, messageId), data);
+        logger.info(`Removed reaction-role mapping from message ${messageId} in guild ${guildId}`);
+        return mapping;
+    });
 }
 
 export async function addReactionRole(client, guildId, messageId, emoji, roleId) {

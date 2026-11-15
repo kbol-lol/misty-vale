@@ -2,6 +2,7 @@ import { Events } from 'discord.js';
 import { getGuildConfig } from '../services/config/guildConfig.js';
 import { logger } from '../utils/logger.js';
 import { Mutex } from '../utils/mutex.js';
+import { handleReactionRoleAssignment } from '../services/reactionRoleAssignment.js';
 
 export default {
   name: Events.MessageReactionAdd,
@@ -23,6 +24,15 @@ export default {
       if (!message.guild) {
         return;
       }
+
+      await handleReactionRoleAssignment(reaction, user, true).catch((error) => {
+        logger.error('Failed to assign reaction role:', {
+          error,
+          guildId: message.guild.id,
+          messageId: message.id,
+          userId: user.id,
+        });
+      });
 
       // Read per-server config for every event so /reactionlimit changes take
       // effect immediately without requiring a bot restart.

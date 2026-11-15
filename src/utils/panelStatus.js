@@ -36,9 +36,10 @@ export function messageHasSelectMenuCustomId(message, selectCustomId) {
     return walk(rows);
 }
 
-export function messageHasPanelMarker(message, { buttonCustomId, selectCustomId } = {}) {
+export function messageHasPanelMarker(message, { buttonCustomId, selectCustomId, footerMarker } = {}) {
     if (buttonCustomId && messageHasButtonCustomId(message, buttonCustomId)) return true;
     if (selectCustomId && messageHasSelectMenuCustomId(message, selectCustomId)) return true;
+    if (footerMarker && message?.embeds?.some((embed) => embed.footer?.text?.includes(footerMarker))) return true;
     return false;
 }
 
@@ -71,13 +72,14 @@ export async function getBotPanelStatus(client, guild, {
     messageId = null,
     buttonCustomId = null,
     selectCustomId = null,
+    footerMarker = null,
     scanLimit = 50,
 } = {}) {
     if (!channelId) {
         return { exists: false, reason: 'no_channel' };
     }
 
-    if (!buttonCustomId && !selectCustomId) {
+    if (!buttonCustomId && !selectCustomId && !footerMarker) {
         return { exists: false, reason: 'no_channel' };
     }
 
@@ -86,7 +88,7 @@ export async function getBotPanelStatus(client, guild, {
         return { exists: false, reason: 'channel_missing' };
     }
 
-    const marker = { buttonCustomId, selectCustomId };
+    const marker = { buttonCustomId, selectCustomId, footerMarker };
 
     if (messageId) {
         const message = await channel.messages.fetch(messageId).catch(() => null);
@@ -127,6 +129,14 @@ export async function getVerificationPanelStatus(client, guild, config) {
 }
 
 export async function getReactionRolePanelStatus(client, guild, panelData) {
+    if (panelData?.mode === 'reaction') {
+        return getBotPanelStatus(client, guild, {
+            channelId: panelData?.channelId,
+            messageId: panelData?.messageId,
+            footerMarker: 'Reaction Role Panel',
+        });
+    }
+
     return getBotPanelStatus(client, guild, {
         channelId: panelData?.channelId,
         messageId: panelData?.messageId,

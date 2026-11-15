@@ -52,8 +52,17 @@ TitanBot offers a complete suite of tools for Discord server management and comm
 
 ### Reaction Roles
 - **Role Assignment** - Self-assignable roles
-- **Emoji Selection** - Reaction-based system
-- **Multi-role Support** - Multiple role options
+- **Native Reactions** - Add a role by reacting; removing the reaction removes the role
+- **Custom Server Emoji** - Use server emojis for each role
+- **Images per Panel** - Give each reaction-role message its own optional image
+
+Create a native reaction panel with `/reactroles reaction-setup`, then use
+`/reactroles dashboard` to add or remove emoji/role pairs. Discord limits each
+message to 20 distinct reactions; the bot supports up to five native reaction
+panels per server (up to 100 reaction roles total). Each panel can have its own
+optional image attachment. Add custom emoji by pasting its server emoji markup
+(for example, `<:emoji_name:12345678901234567>`). Role dropdown panels remain a
+separate feature.
 
 ### Reaction Limiter
 - **Per-message caps** - Limits how many people can use a selected emoji on any message
