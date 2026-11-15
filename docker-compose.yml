@@ -1,7 +1,7 @@
 services:
   bot:
     build: .
-    container_name: titanbot
+    container_name: Misty Vale
     restart: unless-stopped
     env_file:
       - .env

@@ -9,9 +9,7 @@ import {
 import { rpsConfig } from '../../config/rps.js';
 import { InteractionHelper } from '../../utils/interactionHelper.js';
 import { logger } from '../../utils/logger.js';
-
-const MOVES = ['rock', 'paper', 'scissors'];
-const MOVE_BEATS = { rock: 'scissors', paper: 'rock', scissors: 'paper' };
+import { resolveRpsRound, RPS_MOVES } from '../../utils/rpsGame.js';
 
 export default {
   data: new SlashCommandBuilder()
@@ -47,7 +45,7 @@ export default {
       choices: new Map(),
       roundResults: [],
       finished: false,
-      processing: false,
+      interactionQueue: Promise.resolve(),
       message: null,
     };
 
@@ -78,21 +76,13 @@ export default {
     }
 
     const collector = game.message.createMessageComponentCollector({ time: rpsConfig.gameTimeoutMs });
-    collector.on('collect', async (componentInteraction) => {
-      if (game.processing) {
-        await ephemeralReply(componentInteraction, rpsConfig.text.locked);
-        return;
-      }
-
-      game.processing = true;
-      try {
-        await handleGameInteraction(componentInteraction, game, collector);
-      } catch (error) {
-        logger.error('Rock-Paper-Scissors interaction failed:', error);
-        await ephemeralReply(componentInteraction, 'Something went wrong while processing your move.').catch(() => {});
-      } finally {
-        game.processing = false;
-      }
+    collector.on('collect', (componentInteraction) => {
+      game.interactionQueue = game.interactionQueue
+        .then(() => handleGameInteraction(componentInteraction, game, collector))
+        .catch(async (error) => {
+          logger.error('Rock-Paper-Scissors interaction failed:', error);
+          await ephemeralReply(componentInteraction, 'Something went wrong while processing your move.').catch(() => {});
+        });
     });
 
     collector.on('end', async () => {
@@ -137,7 +127,7 @@ async function handleGameInteraction(interaction, game, collector) {
   }
 
   const move = interaction.customId.slice('rps:move:'.length);
-  if (!MOVES.includes(move) || game.finished) {
+  if (!RPS_MOVES.includes(move) || game.finished) {
     await ephemeralReply(interaction, rpsConfig.text.unavailableError);
     return;
   }
@@ -160,23 +150,21 @@ async function handleGameInteraction(interaction, game, collector) {
 }
 
 async function finishRound(game, collector) {
-  const firstMove = game.choices.get(game.creatorId);
-  const secondMove = game.choices.get(game.opponentId);
+  const result = resolveRpsRound(game);
+  const { firstMove, secondMove, winnerId, round, isFinalRound } = result;
   let roundDescription;
 
-  if (firstMove === secondMove) {
+  if (!winnerId) {
     roundDescription = format(rpsConfig.text.roundTie, {
-      round: game.round,
+      round,
       move: displayMove(firstMove),
     });
   } else {
-    const winnerId = MOVE_BEATS[firstMove] === secondMove ? game.creatorId : game.opponentId;
     const loserId = winnerId === game.creatorId ? game.opponentId : game.creatorId;
-    const winnerMove = game.choices.get(winnerId);
-    const loserMove = game.choices.get(loserId);
-    game.scores.set(winnerId, game.scores.get(winnerId) + 1);
+    const winnerMove = winnerId === game.creatorId ? firstMove : secondMove;
+    const loserMove = winnerId === game.creatorId ? secondMove : firstMove;
     roundDescription = format(rpsConfig.text.roundWinner, {
-      round: game.round,
+      round,
       winner: mentionUser(winnerId),
       winnerMove: displayMove(winnerMove),
       loserMove: displayMove(loserMove),
@@ -190,9 +178,7 @@ async function finishRound(game, collector) {
     move2: displayMove(secondMove),
   }));
 
-  const isFinalRound = game.round >= game.rounds;
   if (isFinalRound) {
-    game.finished = true;
     collector.stop('completed');
     const firstScore = game.scores.get(game.creatorId);
     const secondScore = game.scores.get(game.opponentId);
@@ -211,8 +197,6 @@ async function finishRound(game, collector) {
     return;
   }
 
-  game.round += 1;
-  game.choices.clear();
   await game.message.edit({
     embeds: [makeMoveEmbed(game, `${roundDescription}\n\n${makeMoveDescription(game)}`)],
     components: makeMoveRows(game),
@@ -241,7 +225,7 @@ function makeWaitingText(game) {
 
 function makeMoveRows(game) {
   const row = new ActionRowBuilder().addComponents(
-    ...MOVES.map((move) => new ButtonBuilder()
+    ...RPS_MOVES.map((move) => new ButtonBuilder()
       .setCustomId(`rps:move:${move}`)
       .setStyle(ButtonStyle.Secondary)
       .setEmoji(parseButtonEmoji(rpsConfig.emojis[move]))
