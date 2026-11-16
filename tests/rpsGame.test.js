@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import rpsCommand from '../src/commands/Fun/rps.js';
 import { resolveRpsRound } from '../src/utils/rpsGame.js';
 import { isCollectorManagedComponent } from '../src/utils/collectorComponents.js';
 
@@ -19,6 +20,14 @@ test('RPS button interactions are left to their message collector', () => {
   for (const customId of ['rps:join', 'rps:move:rock', 'rps:move:paper', 'rps:move:scissors']) {
     assert.equal(isCollectorManagedComponent(customId.split(':')[0]), true, customId);
   }
+});
+
+test('RPS slash command exposes the tie-disable option', () => {
+  const command = rpsCommand.data.toJSON();
+  const option = command.options.find(({ name }) => name === 'disable_ties');
+
+  assert.equal(option?.type, 5);
+  assert.match(option.description, /sudden death/i);
 });
 
 test('matching moves tie without changing scores', () => {

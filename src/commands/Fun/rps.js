@@ -25,8 +25,8 @@ export default {
     )
     .addBooleanOption((option) =>
       option
-        .setName('allow_ties')
-        .setDescription('Allow tied moves to count as a round (default: yes)')
+        .setName('disable_ties')
+        .setDescription('Replay tied rounds and break tied matches with sudden death')
         .setRequired(false),
     )
     .setDMPermission(false),
@@ -34,7 +34,7 @@ export default {
 
   async execute(interaction) {
     const rounds = interaction.options.getInteger('rounds') ?? rpsConfig.defaultRounds;
-    const allowTies = interaction.options.getBoolean('allow_ties') ?? true;
+    const allowTies = !(interaction.options.getBoolean('disable_ties') ?? false);
     if (!interaction.inGuild() || !interaction.channel?.isTextBased?.()) {
       await InteractionHelper.safeReply(interaction, {
         content: 'Rock-Paper-Scissors can only be started in a server text channel.',
