@@ -28,6 +28,7 @@ TitanBot offers a complete suite of tools for Discord server management and comm
 - **Mass Actions** - Bulk ban/kick capabilities
 - **User Notes** - Keep detailed moderation records
 - **Case Management** - View and track all mod actions
+- **Honeypot** - Configure a restricted channel, ban/kick/timeout response, and an optional editable DM with `/honeypot dashboard`
 
 ### Economy System
 - **Shop & Inventory** - Buy and manage items

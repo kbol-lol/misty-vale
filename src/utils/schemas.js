@@ -2,6 +2,7 @@
 
 import { z } from 'zod';
 import { createError, ErrorTypes } from './errorHandler.js';
+import { DEFAULT_HONEYPOT_SETTINGS, MAX_HONEYPOT_TIMEOUT_MINUTES } from '../config/guild/honeypotDefaults.js';
 
 export const LogIgnoreSchema = z
   .object({
@@ -64,6 +65,18 @@ const ReactionLimiterConfigSchema = z
   })
   .default({ enabled: true, limits: {} });
 
+const HoneypotConfigSchema = z
+  .object({
+    enabled: z.boolean().default(DEFAULT_HONEYPOT_SETTINGS.enabled),
+    channelId: z.string().nullable().default(DEFAULT_HONEYPOT_SETTINGS.channelId),
+    action: z.enum(['ban', 'kick', 'timeout']).default(DEFAULT_HONEYPOT_SETTINGS.action),
+    timeoutMinutes: z.number().int().min(1).max(MAX_HONEYPOT_TIMEOUT_MINUTES)
+      .default(DEFAULT_HONEYPOT_SETTINGS.timeoutMinutes),
+    dmEnabled: z.boolean().default(DEFAULT_HONEYPOT_SETTINGS.dmEnabled),
+    dmMessage: z.string().max(2000).default(DEFAULT_HONEYPOT_SETTINGS.dmMessage),
+  })
+  .default({ ...DEFAULT_HONEYPOT_SETTINGS });
+
 export const GuildConfigSchema = z
   .object({
     prefix: z.string().optional(),
@@ -82,6 +95,7 @@ export const GuildConfigSchema = z
     logging: LoggingConfigSchema.optional(),
     ticketLogging: TicketLoggingSchema.optional(),
     reactionLimiter: ReactionLimiterConfigSchema.optional(),
+    honeypot: HoneypotConfigSchema,
     enableLogging: z.boolean().optional(),
     verification: VerificationConfigSchema
   })

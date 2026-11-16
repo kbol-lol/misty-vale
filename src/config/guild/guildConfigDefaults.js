@@ -1,6 +1,7 @@
 import { BotConfig, getCommandPrefix } from '../bot.js';
 import { DEFAULT_GUILD_CONFIG } from '../../utils/constants.js';
 import { reactionLimiterConfig } from '../reactionLimiter.js';
+import { DEFAULT_HONEYPOT_SETTINGS } from './honeypotDefaults.js';
 
 /**
  * Single source of truth for guild config default values.
@@ -13,6 +14,7 @@ export const GUILD_CONFIG_DEFAULTS = {
     dmOnClose: true,
     disabledCommands: {},
     disabledCategories: {},
+    honeypot: { ...DEFAULT_HONEYPOT_SETTINGS },
     reactionLimiter: {
         enabled: reactionLimiterConfig.enabled,
         limits: { ...reactionLimiterConfig.limits },
