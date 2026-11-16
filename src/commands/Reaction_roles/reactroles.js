@@ -28,6 +28,7 @@ import {
 } from '../../utils/reactionRoleMappings.js';
 
 const DASHBOARD_EPHEMERAL = MessageFlags.Ephemeral;
+const MAX_REACTION_ROLE_PANELS = 10;
 const require = createRequire(import.meta.url);
 const unicodeEmojiData = require('unicode-emoji-json/data-by-group.json');
 const SKIN_TONES = [
@@ -229,12 +230,12 @@ async function handleReactionSetup(interaction) {
 
     const existingPanels = await getAllReactionRoleMessages(interaction.client, interaction.guildId);
     const existingReactionPanels = existingPanels.filter(panel => panel.mode === 'reaction');
-    if (existingReactionPanels.length >= 5) {
+    if (existingReactionPanels.length >= MAX_REACTION_ROLE_PANELS) {
         throw createError(
             'Reaction-role panel limit reached',
             ErrorTypes.VALIDATION,
-            'This server can have up to 5 native reaction-role messages. Discord allows up to 20 reactions per message, for up to 100 roles across 5 messages.',
-            { maxPanels: 5, currentPanels: existingReactionPanels.length },
+            `This server can have up to ${MAX_REACTION_ROLE_PANELS} native reaction-role messages. Discord allows up to 20 reactions per message, for up to ${MAX_REACTION_ROLE_PANELS * MAX_REACTION_ROLES_PER_MESSAGE} roles across ${MAX_REACTION_ROLE_PANELS} messages.`,
+            { maxPanels: MAX_REACTION_ROLE_PANELS, currentPanels: existingReactionPanels.length },
         );
     }
 

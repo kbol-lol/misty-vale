@@ -4,7 +4,7 @@ import {
   createReactionRolePanel,
   updateReactionRolePanelImage,
 } from '../src/services/reactionRoleService.js';
-import {
+import reactRolesCommand, {
   addPanelReactions,
   buildEmojiPickerPayload,
   buildUnicodeEmojiPickerPayload,
@@ -12,6 +12,68 @@ import {
   buildReactionRoleDashboardPayload,
   buildReactionRoleImageEditPayload,
 } from '../src/commands/Reaction_roles/reactroles.js';
+
+function makeReactionSetupInteraction(panelCount) {
+  const guildId = '12345678901234567';
+  const channelId = '22345678901234567';
+  const panelData = new Map();
+  for (let index = 0; index < panelCount; index += 1) {
+    const messageId = `32345678901234${String(index).padStart(3, '0')}`;
+    panelData.set(`guild:${guildId}:reaction_roles:${messageId}`, {
+      guildId,
+      channelId,
+      messageId,
+      mode: 'reaction',
+    });
+  }
+
+  const botMember = { permissions: { has: () => true } };
+  let sendCount = 0;
+  const channel = {
+    id: channelId,
+    permissionsFor: () => ({ has: () => true }),
+    send: async () => {
+      sendCount += 1;
+      return { id: '42345678901234567', url: 'https://discord.test/panel' };
+    },
+  };
+  const interaction = {
+    id: '52345678901234567',
+    user: { id: '62345678901234567', tag: 'Tester' },
+    guildId,
+    guild: { members: { me: botMember } },
+    client: {
+      db: {
+        list: async prefix => [...panelData.keys()].filter(key => key.startsWith(prefix)),
+        get: async key => panelData.get(key),
+        set: async (key, value) => panelData.set(key, value),
+      },
+    },
+    options: {
+      getSubcommand: () => 'reaction-setup',
+      getChannel: () => channel,
+      getString: name => name === 'title' ? 'Test panel' : 'Choose a role.',
+      getAttachment: () => null,
+    },
+    deferReply: async () => { interaction.deferred = true; },
+    editReply: async () => {},
+  };
+  return { interaction, panelData, getSendCount: () => sendCount };
+}
+
+test('reaction setup allows ten panels and rejects an eleventh', async () => {
+  const tenPanelSetup = makeReactionSetupInteraction(9);
+  await reactRolesCommand.execute(tenPanelSetup.interaction);
+  assert.equal(tenPanelSetup.getSendCount(), 1);
+  assert.equal(tenPanelSetup.panelData.size, 10);
+
+  const eleventhPanelSetup = makeReactionSetupInteraction(10);
+  await assert.rejects(
+    reactRolesCommand.execute(eleventhPanelSetup.interaction),
+    error => error.context?.maxPanels === 10 && error.context?.currentPanels === 10,
+  );
+  assert.equal(eleventhPanelSetup.getSendCount(), 0);
+});
 
 test('creating a reaction panel persists its image metadata and starts empty', async () => {
   let savedKey;
