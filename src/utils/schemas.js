@@ -52,6 +52,7 @@ const VerificationConfigSchema = z
     channelId: z.string().nullable().optional(),
     messageId: z.string().nullable().optional(),
     roleId: z.string().optional(),
+    removeRoleId: z.string().nullable().optional(),
     message: z.string().optional(),
     buttonText: z.string().default('Verify'),
     autoVerify: AutoVerifyConfigSchema
@@ -69,6 +70,7 @@ const HoneypotConfigSchema = z
   .object({
     enabled: z.boolean().default(DEFAULT_HONEYPOT_SETTINGS.enabled),
     channelId: z.string().nullable().default(DEFAULT_HONEYPOT_SETTINGS.channelId),
+    logChannelId: z.string().nullable().default(DEFAULT_HONEYPOT_SETTINGS.logChannelId),
     action: z.enum(['ban', 'kick', 'timeout']).default(DEFAULT_HONEYPOT_SETTINGS.action),
     timeoutMinutes: z.number().int().min(1).max(MAX_HONEYPOT_TIMEOUT_MINUTES)
       .default(DEFAULT_HONEYPOT_SETTINGS.timeoutMinutes),

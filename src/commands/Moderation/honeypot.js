@@ -43,6 +43,8 @@ function settingIds(guildId) {
         editDm: `honeypot_edit_dm_${guildId}`,
         editTimeout: `honeypot_edit_timeout_${guildId}`,
         clearChannel: `honeypot_clear_channel_${guildId}`,
+        logChannel: `honeypot_log_channel_${guildId}`,
+        clearLogChannel: `honeypot_clear_log_channel_${guildId}`,
     };
 }
 
@@ -52,6 +54,7 @@ function truncate(value, limit = 900) {
 
 function buildDashboardEmbed(guild, settings) {
     const channel = settings.channelId ? guild.channels.cache.get(settings.channelId) : null;
+    const logChannel = settings.logChannelId ? guild.channels.cache.get(settings.logChannelId) : null;
     const action = ACTION_OPTIONS.find(option => option.value === settings.action)?.name || 'Ban';
     const dmPreview = settings.dmMessage ? truncate(settings.dmMessage) : '`(leer)`';
 
@@ -66,6 +69,7 @@ function buildDashboardEmbed(guild, settings) {
         .addFields(
             { name: 'Status', value: settings.enabled ? '🟢 Aktiv' : '⚫ Aus', inline: true },
             { name: 'Honeypot-Kanal', value: channel ? `<#${channel.id}>` : '`Nicht gesetzt`', inline: true },
+            { name: 'Protokoll-Kanal', value: logChannel ? `<#${logChannel.id}>` : '`Nicht gesetzt`', inline: true },
             { name: 'Aktion', value: action, inline: true },
             {
                 name: 'Timeout-Dauer',
@@ -99,6 +103,13 @@ function buildDashboardComponents(guildId, settings) {
         .setMaxValues(1)
         .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement);
 
+    const logChannelMenu = new ChannelSelectMenuBuilder()
+        .setCustomId(ids.logChannel)
+        .setPlaceholder('Protokoll-Kanal auswählen...')
+        .setMinValues(1)
+        .setMaxValues(1)
+        .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement);
+
     const buttons = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId(ids.toggle)
@@ -127,7 +138,15 @@ function buildDashboardComponents(guildId, settings) {
     return [
         new ActionRowBuilder().addComponents(actionMenu),
         new ActionRowBuilder().addComponents(channelMenu),
+        new ActionRowBuilder().addComponents(logChannelMenu),
         buttons,
+        new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setCustomId(ids.clearLogChannel)
+                .setLabel('Protokoll-Kanal entfernen')
+                .setStyle(ButtonStyle.Secondary)
+                .setDisabled(!settings.logChannelId),
+        ),
     ];
 }
 
@@ -156,11 +175,30 @@ async function validateCanEnable(guild, settings) {
         );
     }
 
-    if (!channel.permissionsFor(botMember)?.has(PermissionFlagsBits.ViewChannel)) {
+    if (!channel.permissionsFor(botMember)?.has([
+        PermissionFlagsBits.ViewChannel,
+        PermissionFlagsBits.ManageMessages,
+    ])) {
         throw new TitanBotError(
-            'Bot cannot view honeypot channel',
+            'Bot cannot delete honeypot messages',
             ErrorTypes.PERMISSION,
-            'Der Bot benötigt im ausgewählten Honeypot-Kanal die Berechtigung „Kanal ansehen“.',
+            'Der Bot benötigt im ausgewählten Honeypot-Kanal die Berechtigungen „Kanal ansehen“ und „Nachrichten verwalten“, damit Nachrichten gelöscht werden können.',
+        );
+    }
+}
+
+async function validateLogChannel(guild, channel) {
+    const botMember = guild.members.me || await guild.members.fetchMe();
+    const requiredPermissions = [
+        PermissionFlagsBits.ViewChannel,
+        PermissionFlagsBits.SendMessages,
+        PermissionFlagsBits.EmbedLinks,
+    ];
+    if (!channel.permissionsFor(botMember)?.has(requiredPermissions)) {
+        throw new TitanBotError(
+            'Bot cannot write honeypot logs',
+            ErrorTypes.PERMISSION,
+            'Der Bot benötigt im Protokoll-Kanal die Berechtigungen „Kanal ansehen“, „Nachrichten senden“ und „Links einbetten“.',
         );
     }
 }
@@ -272,6 +310,17 @@ async function handleDashboardComponent(component, rootInteraction, settings, cl
             await validateCanEnable(component.guild, { ...settings, channelId: channel.id });
         }
         settings = await saveSettings(client, guildId, { channelId: channel.id });
+    } else if (component.customId === ids.logChannel) {
+        const channel = component.channels.first();
+        if (!channel || ![ChannelType.GuildText, ChannelType.GuildAnnouncement].includes(channel.type)) {
+            throw new TitanBotError(
+                'Invalid honeypot log channel',
+                ErrorTypes.VALIDATION,
+                'Wähle einen Text- oder Ankündigungskanal als Protokoll-Kanal aus.',
+            );
+        }
+        await validateLogChannel(component.guild, channel);
+        settings = await saveSettings(client, guildId, { logChannelId: channel.id });
     } else if (component.customId === ids.action) {
         const action = component.values[0];
         if (!ACTION_OPTIONS.some(option => option.value === action)) {
@@ -291,6 +340,8 @@ async function handleDashboardComponent(component, rootInteraction, settings, cl
         settings = await saveSettings(client, guildId, { dmEnabled: !settings.dmEnabled });
     } else if (component.customId === ids.clearChannel) {
         settings = await saveSettings(client, guildId, { channelId: null, enabled: false });
+    } else if (component.customId === ids.clearLogChannel) {
+        settings = await saveSettings(client, guildId, { logChannelId: null });
     } else {
         return;
     }

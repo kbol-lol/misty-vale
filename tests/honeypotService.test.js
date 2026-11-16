@@ -3,6 +3,7 @@ import test from 'node:test';
 import { PermissionFlagsBits, PermissionsBitField } from 'discord.js';
 import {
     formatHoneypotMessage,
+    handleHoneypotMessage,
     isHoneypotExempt,
     performHoneypotAction,
 } from '../src/services/honeypotService.js';
@@ -101,4 +102,68 @@ test('honeypot leaves the user without a DM when DMs are disabled', async () => 
     });
 
     assert.equal(dmSent, false);
+});
+
+test('honeypot deletes the triggering message before taking action', async () => {
+    const calls = [];
+    const guild = {
+        id: 'guild-id',
+        ownerId: 'owner-id',
+        members: { fetch: async () => null },
+    };
+    const message = {
+        id: 'message-id',
+        guild,
+        client: {},
+        author: { id: 'user-id', bot: false },
+        member: { id: 'user-id', permissions: { has: () => false } },
+        channelId: 'honeypot-id',
+        delete: async () => calls.push('deleted'),
+    };
+
+    await handleHoneypotMessage(message, {
+        loadGuildConfig: async () => ({
+            honeypot: { enabled: true, channelId: 'honeypot-id' },
+        }),
+        performAction: async () => calls.push('action'),
+    });
+
+    assert.deepEqual(calls, ['deleted', 'action']);
+});
+
+test('honeypot logs a successful sanction to its configured channel', async () => {
+    const logMessages = [];
+    const botMember = { permissions: new PermissionsBitField([PermissionFlagsBits.BanMembers]) };
+    const logChannel = {
+        isTextBased: () => true,
+        send: async payload => logMessages.push(payload),
+    };
+    const guild = {
+        id: 'guild-id',
+        name: 'Misty Vale',
+        members: { me: botMember },
+        channels: { cache: new Map([['log-id', logChannel], ['honeypot-id', { name: 'honeypot' }]]) },
+    };
+    const member = {
+        id: 'user-id',
+        guild,
+        user: { username: 'Ada', tag: 'Ada#0001', send: async () => {} },
+        bannable: true,
+    };
+
+    await performHoneypotAction({
+        guild,
+        member,
+        settings: {
+            action: 'ban',
+            channelId: 'honeypot-id',
+            logChannelId: 'log-id',
+            dmEnabled: false,
+            dmMessage: '',
+        },
+        moderationService: { banUser: async () => {} },
+    });
+
+    assert.equal(logMessages.length, 1);
+    assert.match(logMessages[0].embeds[0].data.description, /<@user-id> wurde im Honeypot-Kanal gebannt/);
 });

@@ -1,4 +1,4 @@
-import { PermissionFlagsBits } from 'discord.js';
+import { EmbedBuilder, PermissionFlagsBits } from 'discord.js';
 import { getGuildConfig } from './config/guildConfig.js';
 import { ModerationService } from './moderation/moderationService.js';
 import { logger } from '../utils/logger.js';
@@ -8,7 +8,6 @@ const ACTION_LABELS = {
     kick: 'gekickt',
     timeout: 'stummgeschaltet',
 };
-
 const REQUIRED_PERMISSIONS = {
     ban: PermissionFlagsBits.BanMembers,
     kick: PermissionFlagsBits.KickMembers,
@@ -95,10 +94,43 @@ export async function performHoneypotAction({
         });
     }
 
+    await logHoneypotAction(guild, member, settings);
     return true;
 }
 
-export async function handleHoneypotMessage(message) {
+async function logHoneypotAction(guild, member, settings) {
+    if (!settings.logChannelId) return;
+
+    try {
+        const channel = guild.channels.cache.get(settings.logChannelId)
+            || await guild.channels.fetch(settings.logChannelId);
+        if (!channel?.isTextBased()) {
+            logger.warn(`Honeypot log channel ${settings.logChannelId} is unavailable in guild ${guild.id}`);
+            return;
+        }
+
+        const action = ACTION_LABELS[settings.action] || settings.action;
+        await channel.send({
+            embeds: [new EmbedBuilder()
+                .setTitle('Honeypot-Sanktion')
+                .setDescription(`<@${member.id}> wurde im Honeypot-Kanal ${action}.`)
+                .addFields(
+                    { name: 'Nutzer', value: `${member.user.tag} (${member.id})`, inline: false },
+                    { name: 'Aktion', value: action, inline: true },
+                    { name: 'Honeypot-Kanal', value: `<#${settings.channelId}>`, inline: true },
+                )
+                .setTimestamp()],
+            allowedMentions: { parse: [] },
+        });
+    } catch (error) {
+        logger.error(`Could not log honeypot action in guild ${guild.id}:`, error);
+    }
+}
+
+export async function handleHoneypotMessage(message, {
+    loadGuildConfig = getGuildConfig,
+    performAction = performHoneypotAction,
+} = {}) {
     if (
         !message?.guild
         || message.author?.bot
@@ -108,10 +140,16 @@ export async function handleHoneypotMessage(message) {
         return false;
     }
 
-    const config = await getGuildConfig(message.client, message.guild.id);
+    const config = await loadGuildConfig(message.client, message.guild.id);
     const settings = config.honeypot;
     if (!settings?.enabled || settings.channelId !== message.channelId) {
         return false;
+    }
+
+    try {
+        await message.delete();
+    } catch (error) {
+        logger.warn(`Could not delete honeypot message ${message.id} in guild ${message.guild.id}:`, error.message);
     }
 
     const triggerKey = `${message.guild.id}:${message.author.id}`;
@@ -123,7 +161,7 @@ export async function handleHoneypotMessage(message) {
             || await message.guild.members.fetch(message.author.id).catch(() => null);
         if (!member || isHoneypotExempt(member, message.guild)) return true;
 
-        await performHoneypotAction({
+        await performAction({
             guild: message.guild,
             member,
             settings,

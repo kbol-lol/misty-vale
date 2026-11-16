@@ -14,6 +14,7 @@ import {
     MessageFlags,
     ComponentType,
     EmbedBuilder,
+    PermissionFlagsBits,
 } from 'discord.js';
 import { InteractionHelper } from '../../../utils/interactionHelper.js';
 import { successEmbed } from '../../../utils/embeds.js';
@@ -58,6 +59,7 @@ async function updateLivePanel(guild, cfg) {
 function buildDashboardEmbed(cfg, guild, verifiedUserCount = 0, conflictSummary = '', panelStatus = null) {
     const channel = cfg.channelId ? `<#${cfg.channelId}>` : '`Not set`';
     const role = cfg.roleId ? `<@&${cfg.roleId}>` : '`Not set`';
+    const removeRole = cfg.removeRoleId ? `<@&${cfg.removeRoleId}>` : '`Not set`';
     const rawMsg = cfg.message || botConfig.verification.defaultMessage;
     const msgPreview = `\`${rawMsg.length > 60 ? rawMsg.substring(0, 60) + '…' : rawMsg}\``;
     const buttonText = cfg.buttonText || botConfig.verification.defaultButtonText;
@@ -71,6 +73,7 @@ function buildDashboardEmbed(cfg, guild, verifiedUserCount = 0, conflictSummary 
             { name: 'Panel Status', value: panelStatusValue, inline: false },
             { name: 'Verification Channel', value: channel, inline: true },
             { name: 'Verified Role', value: role, inline: true },
+            { name: 'Role Removed on Verification', value: removeRole, inline: true },
             { name: 'System Status', value: cfg.enabled !== false ? 'Enabled' : 'Disabled', inline: true },
             { name: 'Button Text', value: `\`${buttonText}\``, inline: true },
             { name: 'Verified Users', value: `${verifiedUserCount} users`, inline: true },
@@ -102,6 +105,16 @@ function buildSelectMenu(guildId) {
                 .setDescription('Set the role assigned when a user verifies')
                 .setValue('role')
                 .setEmoji('🏷️'),
+            new StringSelectMenuOptionBuilder()
+                .setLabel('Role to Remove After Verification')
+                .setDescription('Choose a role to remove when the verify button is pressed')
+                .setValue('remove_role')
+                .setEmoji('➖'),
+            new StringSelectMenuOptionBuilder()
+                .setLabel('Clear Role Removed on Verification')
+                .setDescription('Do not remove an additional role when a user verifies')
+                .setValue('clear_remove_role')
+                .setEmoji('🧹'),
             new StringSelectMenuOptionBuilder()
                 .setLabel('Edit Verification Message')
                 .setDescription('Customise the message shown on the verification panel embed')
@@ -297,6 +310,21 @@ export default {
                             break;
                         case 'role':
                             await handleRole(selectInteraction, interaction, cfg, guildId, client);
+                            break;
+                        case 'remove_role':
+                            await handleRemoveRole(selectInteraction, interaction, cfg, guildId, client);
+                            break;
+                        case 'clear_remove_role':
+                            await selectInteraction.deferUpdate();
+                            cfg.removeRoleId = null;
+                            const latestConfig = await getGuildConfig(client, guildId);
+                            latestConfig.verification = cfg;
+                            await setGuildConfig(client, guildId, latestConfig);
+                            await selectInteraction.followUp({
+                                embeds: [successEmbed('Role Removal Cleared', 'No additional role will be removed when users verify.')],
+                                flags: MessageFlags.Ephemeral,
+                            });
+                            await refreshDashboard(interaction, cfg, guildId, client);
                             break;
                         case 'message':
                             await handleMessage(selectInteraction, interaction, cfg, guildId, client);
@@ -552,6 +580,80 @@ async function handleRole(selectInteraction, rootInteraction, cfg, guildId, clie
 
         await roleInteraction.followUp({
             embeds: [successEmbed('Role Updated', `Verified role set to ${role}.`)],
+            flags: MessageFlags.Ephemeral,
+        });
+
+        await refreshDashboard(rootInteraction, cfg, guildId, client);
+    });
+
+    roleCollector.on('end', (collected, reason) => {
+        if (reason === 'time' && collected.size === 0) {
+            replyUserError(selectInteraction, {
+                type: ErrorTypes.RATE_LIMIT,
+                message: 'No role was selected. The setting was not changed.',
+            }).catch(() => {});
+        }
+    });
+}
+
+async function handleRemoveRole(selectInteraction, rootInteraction, cfg, guildId, client) {
+    await selectInteraction.deferUpdate();
+
+    const roleSelect = new RoleSelectMenuBuilder()
+        .setCustomId('verif_cfg_remove_role')
+        .setPlaceholder('Select a role to remove after verification...')
+        .setMaxValues(1);
+
+    await selectInteraction.followUp({
+        embeds: [
+            new EmbedBuilder()
+                .setTitle('Role to Remove After Verification')
+                .setDescription(
+                    `**Current:** ${cfg.removeRoleId ? `<@&${cfg.removeRoleId}>` : '`Not set`'}\n\nSelect a role that should be removed when a user verifies.`,
+                )
+                .setColor(getColor('info')),
+        ],
+        components: [new ActionRowBuilder().addComponents(roleSelect)],
+        flags: MessageFlags.Ephemeral,
+    });
+
+    const roleCollector = rootInteraction.channel.createMessageComponentCollector({
+        componentType: ComponentType.RoleSelect,
+        filter: i =>
+            i.user.id === selectInteraction.user.id && i.customId === 'verif_cfg_remove_role',
+        time: 60_000,
+        max: 1,
+    });
+
+    roleCollector.on('collect', async roleInteraction => {
+        await roleInteraction.deferUpdate();
+        const role = roleInteraction.roles.first();
+        const guild = rootInteraction.guild;
+        const botMember = guild.members.me;
+
+        if (role.id === guild.id || role.managed || role.id === cfg.roleId) {
+            await replyUserError(roleInteraction, {
+                type: ErrorTypes.VALIDATION,
+                message: 'Choose a normal role that is different from the verified role.',
+            });
+            return;
+        }
+
+        if (!botMember.permissions.has(PermissionFlagsBits.ManageRoles) || role.position >= botMember.roles.highest.position) {
+            await replyUserError(roleInteraction, {
+                type: ErrorTypes.PERMISSION,
+                message: 'The role must be below my highest role, and I need the Manage Roles permission.',
+            });
+            return;
+        }
+
+        cfg.removeRoleId = role.id;
+        const latestConfig = await getGuildConfig(client, guildId);
+        latestConfig.verification = cfg;
+        await setGuildConfig(client, guildId, latestConfig);
+
+        await roleInteraction.followUp({
+            embeds: [successEmbed('Role Removal Updated', `${role} will be removed when a user verifies.`)],
             flags: MessageFlags.Ephemeral,
         });
 

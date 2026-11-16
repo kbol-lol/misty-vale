@@ -30,6 +30,8 @@ let lastCleanupAt = 0;
 
 export async function verifyUser(client, guildId, userId, options = {}) {
     const { source = 'manual', moderatorId = null } = options;
+    const loadGuildConfig = options.loadGuildConfig || getGuildConfig;
+    const recordAction = options.recordAction || logVerificationAction;
     
     try {
         
@@ -55,7 +57,7 @@ export async function verifyUser(client, guildId, userId, options = {}) {
             );
         }
 
-        const guildConfig = await getGuildConfig(client, guildId);
+        const guildConfig = await loadGuildConfig(client, guildId);
         
         if (!guildConfig.verification?.enabled) {
             throw createError(
@@ -91,9 +93,24 @@ export async function verifyUser(client, guildId, userId, options = {}) {
         await checkVerificationCooldown(userId, guildId, defaultCooldownMs);
         await trackVerificationAttempt(userId, guildId, defaultMaxAttempts, defaultAttemptWindowMs);
 
+        const removeRoleId = guildConfig.verification.removeRoleId;
+        const shouldRemoveRole = removeRoleId && member.roles.cache.has(removeRoleId);
+        if (shouldRemoveRole && !await validateBotCanAssignRole(guild, removeRoleId)) {
+            throw createError(
+                'Bot cannot remove configured verification role',
+                ErrorTypes.PERMISSION,
+                "I can't remove the configured role. Please check my **Manage Roles** permission and role hierarchy.",
+                { guildId, roleId: removeRoleId }
+            );
+        }
+
         await member.roles.add(verifiedRole.id, `User verified (${source})`);
 
-        logVerificationAction(client, guildId, userId, 'verified', {
+        if (shouldRemoveRole) {
+            await member.roles.remove(removeRoleId, `Role removed after verification (${source})`);
+        }
+
+        recordAction(client, guildId, userId, 'verified', {
             source,
             roleId: verifiedRole.id,
             roleName: verifiedRole.name,
