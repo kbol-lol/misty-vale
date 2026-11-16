@@ -1,3 +1,4 @@
+import { createRequire } from 'node:module';
 import { getColor } from '../../config/bot.js';
 import { SlashCommandBuilder, PermissionFlagsBits, ChannelType, ActionRowBuilder, StringSelectMenuBuilder, StringSelectMenuOptionBuilder, RoleSelectMenuBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, ButtonBuilder, ButtonStyle, MessageFlags, ComponentType, EmbedBuilder, LabelBuilder, CheckboxBuilder, TextDisplayBuilder, FileUploadBuilder } from 'discord.js';
 import { successEmbed } from '../../utils/embeds.js';
@@ -27,6 +28,39 @@ import {
 } from '../../utils/reactionRoleMappings.js';
 
 const DASHBOARD_EPHEMERAL = MessageFlags.Ephemeral;
+const require = createRequire(import.meta.url);
+const unicodeEmojiData = require('unicode-emoji-json/data-by-group.json');
+const SKIN_TONES = [
+    { emoji: '🏻', name: 'light skin tone', slug: 'light_skin_tone' },
+    { emoji: '🏼', name: 'medium-light skin tone', slug: 'medium_light_skin_tone' },
+    { emoji: '🏽', name: 'medium skin tone', slug: 'medium_skin_tone' },
+    { emoji: '🏾', name: 'medium-dark skin tone', slug: 'medium_dark_skin_tone' },
+    { emoji: '🏿', name: 'dark skin tone', slug: 'dark_skin_tone' },
+];
+
+function withSkinTone(emoji, tone) {
+    const characters = Array.from(emoji);
+    const firstUnmodifiedCharacter = characters[1] === '\uFE0F' ? 2 : 1;
+    return [characters[0], tone, ...characters.slice(firstUnmodifiedCharacter)].join('');
+}
+
+const UNICODE_EMOJI_GROUPS = unicodeEmojiData.map(group => ({
+    name: group.name,
+    emojis: group.emojis.flatMap(emoji => [
+        { ...emoji, group: group.name },
+        ...(emoji.skin_tone_support
+            ? SKIN_TONES.map(tone => ({
+                  ...emoji,
+                  emoji: withSkinTone(emoji.emoji, tone.emoji),
+                  name: `${emoji.name} ${tone.name}`,
+                  slug: `${emoji.slug}_${tone.slug}`,
+                  group: group.name,
+                  skin_tone_support: false,
+              }))
+            : []),
+    ]),
+}));
+const UNICODE_EMOJIS = UNICODE_EMOJI_GROUPS.flatMap(group => group.emojis);
 
 export default {
     data: new SlashCommandBuilder()
@@ -817,11 +851,11 @@ async function handleAddRole(selectInteraction, rootInteraction, panelData, guil
 }
 
 export function buildEmojiPickerPayload(emojis, page, customIdPrefix) {
-    const pageSize = 24;
+    const pageSize = 23;
     const pageCount = Math.max(1, Math.ceil(emojis.length / pageSize));
     const pageItems = emojis.slice(page * pageSize, (page + 1) * pageSize);
     const emojiSelect = new StringSelectMenuBuilder()
-        .setCustomId(`${customIdPrefix}_select`)
+        .setCustomId(`${customIdPrefix}_server_select`)
         .setPlaceholder('Choose a server emoji...')
         .addOptions(
             ...pageItems.map(emoji =>
@@ -835,6 +869,11 @@ export function buildEmojiPickerPayload(emojis, page, customIdPrefix) {
                 .setLabel('Enter emoji manually')
                 .setDescription('Use any Unicode emoji or server emoji markup')
                 .setValue('manual'),
+            new StringSelectMenuOptionBuilder()
+                .setLabel('Browse all Unicode emojis')
+                .setDescription('Search by name or browse by category')
+                .setValue('unicode')
+                .setEmoji('🔎'),
         );
 
     const components = [new ActionRowBuilder().addComponents(emojiSelect)];
@@ -842,12 +881,12 @@ export function buildEmojiPickerPayload(emojis, page, customIdPrefix) {
         components.push(
             new ActionRowBuilder().addComponents(
                 new ButtonBuilder()
-                    .setCustomId(`${customIdPrefix}_previous`)
+                    .setCustomId(`${customIdPrefix}_server_previous`)
                     .setLabel('Previous')
                     .setStyle(ButtonStyle.Secondary)
                     .setDisabled(page === 0),
                 new ButtonBuilder()
-                    .setCustomId(`${customIdPrefix}_next`)
+                    .setCustomId(`${customIdPrefix}_server_next`)
                     .setLabel('Next')
                     .setStyle(ButtonStyle.Secondary)
                     .setDisabled(page >= pageCount - 1),
@@ -859,11 +898,176 @@ export function buildEmojiPickerPayload(emojis, page, customIdPrefix) {
         embeds: [
             new EmbedBuilder()
                 .setTitle('Choose a Reaction Emoji')
-                .setDescription(`Choose a server emoji or paste a Unicode emoji or server emoji markup manually. Page ${page + 1}/${pageCount}.`)
+                .setDescription(`Choose a server emoji, browse the Unicode emoji library, or paste a custom emoji. Page ${page + 1}/${pageCount}.`)
                 .setColor(getColor('info')),
         ],
         components,
     };
+}
+
+function getUnicodeEmojiMatches(category, query) {
+    const normalizedQuery = query.trim().toLocaleLowerCase();
+    return UNICODE_EMOJIS.filter(emoji =>
+        (category === 'all' || emoji.group === category)
+        && (!normalizedQuery
+            || `${emoji.name} ${emoji.slug} ${emoji.group} ${emoji.emoji}`.toLocaleLowerCase().includes(normalizedQuery)),
+    );
+}
+
+export function buildUnicodeEmojiPickerPayload({ category = 'all', query = '', page = 0 }, customIdPrefix) {
+    const matches = getUnicodeEmojiMatches(category, query);
+    const pageSize = 25;
+    const pageCount = Math.max(1, Math.ceil(matches.length / pageSize));
+    const currentPage = Math.min(Math.max(page, 0), pageCount - 1);
+    const pageItems = matches.slice(currentPage * pageSize, (currentPage + 1) * pageSize);
+    const emojiSelect = new StringSelectMenuBuilder()
+        .setCustomId(`${customIdPrefix}_unicode_select`)
+        .setPlaceholder(matches.length ? 'Choose a Unicode emoji...' : 'No matches found')
+        .addOptions(
+            pageItems.length
+                ? pageItems.map(emoji =>
+                      new StringSelectMenuOptionBuilder()
+                          .setLabel(emoji.name.slice(0, 100))
+                          .setDescription(emoji.group.slice(0, 100))
+                          .setValue(emoji.emoji)
+                          .setEmoji(emoji.emoji),
+                  )
+                : [
+                      new StringSelectMenuOptionBuilder()
+                          .setLabel('No matches found')
+                          .setDescription('Try a different search or category')
+                          .setValue('no-results'),
+                  ],
+        )
+        .setDisabled(matches.length === 0);
+    const categorySelect = new StringSelectMenuBuilder()
+        .setCustomId(`${customIdPrefix}_unicode_category`)
+        .setPlaceholder('Browse emoji category...')
+        .addOptions(
+            new StringSelectMenuOptionBuilder()
+                .setLabel('All categories')
+                .setValue('all')
+                .setDefault(category === 'all'),
+            ...UNICODE_EMOJI_GROUPS.map(group =>
+                new StringSelectMenuOptionBuilder()
+                    .setLabel(group.name)
+                    .setValue(group.name)
+                    .setDefault(category === group.name),
+            ),
+        );
+    const buttons = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId(`${customIdPrefix}_unicode_previous`)
+            .setLabel('Previous')
+            .setStyle(ButtonStyle.Secondary)
+            .setDisabled(currentPage === 0),
+        new ButtonBuilder()
+            .setCustomId(`${customIdPrefix}_unicode_next`)
+            .setLabel('Next')
+            .setStyle(ButtonStyle.Secondary)
+            .setDisabled(currentPage >= pageCount - 1),
+        new ButtonBuilder()
+            .setCustomId(`${customIdPrefix}_unicode_search`)
+            .setLabel('Search')
+            .setStyle(ButtonStyle.Primary),
+        new ButtonBuilder()
+            .setCustomId(`${customIdPrefix}_unicode_manual`)
+            .setLabel('Paste emoji')
+            .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+            .setCustomId(`${customIdPrefix}_server`)
+            .setLabel('Server emojis')
+            .setStyle(ButtonStyle.Secondary),
+    );
+    const categoryLabel = category === 'all' ? 'All categories' : category;
+    const searchLabel = query ? ` · Search: **${query.slice(0, 50)}**` : '';
+
+    return {
+        embeds: [
+            new EmbedBuilder()
+                .setTitle('Unicode Emoji Picker')
+                .setDescription(`**${categoryLabel}**${searchLabel}\n${matches.length} emojis · Page ${currentPage + 1}/${pageCount}`)
+                .setColor(getColor('info')),
+        ],
+        components: [
+            new ActionRowBuilder().addComponents(categorySelect),
+            new ActionRowBuilder().addComponents(emojiSelect),
+            buttons,
+        ],
+    };
+}
+
+async function requestManualEmoji(componentInteraction, customIdPrefix) {
+    const modalCustomId = `${customIdPrefix}_manual_${componentInteraction.id}`;
+    const modal = new ModalBuilder()
+        .setCustomId(modalCustomId)
+        .setTitle('Paste an Emoji')
+        .addComponents(
+            new ActionRowBuilder().addComponents(
+                new TextInputBuilder()
+                    .setCustomId('reaction_emoji')
+                    .setLabel('Unicode emoji or custom emoji markup')
+                    .setPlaceholder('Paste an emoji or <:name:id>')
+                    .setStyle(TextInputStyle.Short)
+                    .setMaxLength(100)
+                    .setRequired(true),
+            ),
+        );
+
+    try {
+        await componentInteraction.showModal(modal);
+    } catch (error) {
+        logger.error('Could not show the manual reaction-role emoji modal:', error);
+        await replyUserError(componentInteraction, {
+            type: ErrorTypes.UNKNOWN,
+            message: 'Could not open manual emoji entry. Please try again.',
+        }).catch(() => {});
+        return null;
+    }
+
+    const submitted = await componentInteraction.awaitModalSubmit({
+        filter: i => i.customId === modalCustomId && i.user.id === componentInteraction.user.id,
+        time: 120_000,
+    }).catch(() => null);
+    if (!submitted) return null;
+    return {
+        input: submitted.fields.getTextInputValue('reaction_emoji'),
+        interaction: submitted,
+    };
+}
+
+async function requestUnicodeEmojiSearch(componentInteraction, customIdPrefix) {
+    const modalCustomId = `${customIdPrefix}_search_${componentInteraction.id}`;
+    const modal = new ModalBuilder()
+        .setCustomId(modalCustomId)
+        .setTitle('Search Unicode Emojis')
+        .addComponents(
+            new ActionRowBuilder().addComponents(
+                new TextInputBuilder()
+                    .setCustomId('emoji_query')
+                    .setLabel('Name, keyword, category, or emoji')
+                    .setPlaceholder('For example: cat, heart, food, or 😀')
+                    .setStyle(TextInputStyle.Short)
+                    .setMaxLength(50)
+                    .setRequired(false),
+            ),
+        );
+
+    try {
+        await componentInteraction.showModal(modal);
+    } catch (error) {
+        logger.error('Could not show the Unicode emoji search modal:', error);
+        await replyUserError(componentInteraction, {
+            type: ErrorTypes.UNKNOWN,
+            message: 'Could not open emoji search. Please try again.',
+        }).catch(() => {});
+        return null;
+    }
+
+    return componentInteraction.awaitModalSubmit({
+        filter: i => i.customId === modalCustomId && i.user.id === componentInteraction.user.id,
+        time: 120_000,
+    }).catch(() => null);
 }
 
 async function chooseReactionRoleEmoji(roleInteraction, guild) {
@@ -871,13 +1075,15 @@ async function chooseReactionRoleEmoji(roleInteraction, guild) {
         .filter(emoji => emoji.available !== false)
         .sort((left, right) => (left.name || '').localeCompare(right.name || ''));
     const customIdPrefix = `rr_emoji_${roleInteraction.id}`;
-    let page = 0;
-    const pageCount = Math.max(1, Math.ceil(emojis.length / 24));
+    let view = 'server';
+    let serverPage = 0;
+    const serverPageCount = Math.max(1, Math.ceil(emojis.length / 23));
+    const unicodeState = { category: 'all', query: '', page: 0 };
 
     await roleInteraction.deferReply({ flags: MessageFlags.Ephemeral });
-    const pickerMessage = await roleInteraction.editReply(buildEmojiPickerPayload(emojis, page, customIdPrefix));
+    const pickerMessage = await roleInteraction.editReply(buildEmojiPickerPayload(emojis, serverPage, customIdPrefix));
 
-    const selection = await new Promise(resolve => {
+    const selected = await new Promise(resolve => {
         let settled = false;
         const finish = value => {
             if (settled) return;
@@ -888,81 +1094,107 @@ async function chooseReactionRoleEmoji(roleInteraction, guild) {
             filter: component =>
                 component.user.id === roleInteraction.user.id
                 && component.message.id === pickerMessage.id
-                && [
-                    `${customIdPrefix}_select`,
-                    `${customIdPrefix}_previous`,
-                    `${customIdPrefix}_next`,
-                ].includes(component.customId),
+                && component.customId.startsWith(`${customIdPrefix}_`),
             time: 120_000,
         });
 
         collector.on('collect', async component => {
-            if (component.customId === `${customIdPrefix}_previous` || component.customId === `${customIdPrefix}_next`) {
-                page += component.customId === `${customIdPrefix}_next` ? 1 : -1;
-                page = Math.min(Math.max(page, 0), pageCount - 1);
-                try {
-                    await component.update(buildEmojiPickerPayload(emojis, page, customIdPrefix));
-                } catch (error) {
-                    logger.error('Failed to paginate the reaction-role emoji picker:', error);
-                    await replyUserError(component, {
-                        type: ErrorTypes.UNKNOWN,
-                        message: 'Could not load that emoji page. Please try again.',
-                    }).catch(() => {});
-                    finish(null);
-                    collector.stop();
-                }
-                return;
-            }
+            try {
+                if (view === 'server') {
+                    if (component.customId === `${customIdPrefix}_server_previous` || component.customId === `${customIdPrefix}_server_next`) {
+                        serverPage += component.customId === `${customIdPrefix}_server_next` ? 1 : -1;
+                        serverPage = Math.min(Math.max(0, serverPage), serverPageCount - 1);
+                        await component.update(buildEmojiPickerPayload(emojis, serverPage, customIdPrefix));
+                        return;
+                    }
 
-            finish(component);
-            collector.stop('selected');
+                    const value = component.values?.[0];
+                    if (value === 'unicode') {
+                        view = 'unicode';
+                        unicodeState.category = 'all';
+                        unicodeState.query = '';
+                        unicodeState.page = 0;
+                        await component.update(buildUnicodeEmojiPickerPayload(unicodeState, customIdPrefix));
+                        return;
+                    }
+                    if (value === 'manual') {
+                        const manual = await requestManualEmoji(component, customIdPrefix);
+                        if (manual) {
+                            finish(manual);
+                            collector.stop('selected');
+                        }
+                        return;
+                    }
+                    finish({ input: value, interaction: component });
+                    collector.stop('selected');
+                    return;
+                }
+
+                if (component.customId === `${customIdPrefix}_server`) {
+                    view = 'server';
+                    await component.update(buildEmojiPickerPayload(emojis, serverPage, customIdPrefix));
+                    return;
+                }
+                if (component.customId === `${customIdPrefix}_unicode_category`) {
+                    unicodeState.category = component.values[0];
+                    unicodeState.query = '';
+                    unicodeState.page = 0;
+                    await component.update(buildUnicodeEmojiPickerPayload(unicodeState, customIdPrefix));
+                    return;
+                }
+                if (component.customId === `${customIdPrefix}_unicode_previous` || component.customId === `${customIdPrefix}_unicode_next`) {
+                    unicodeState.page += component.customId === `${customIdPrefix}_unicode_next` ? 1 : -1;
+                    unicodeState.page = Math.max(0, unicodeState.page);
+                    await component.update(buildUnicodeEmojiPickerPayload(unicodeState, customIdPrefix));
+                    return;
+                }
+                if (component.customId === `${customIdPrefix}_unicode_search`) {
+                    const submitted = await requestUnicodeEmojiSearch(component, customIdPrefix);
+                    if (!submitted) return;
+                    const query = submitted.fields.getTextInputValue('emoji_query').trim();
+                    unicodeState.query = query;
+                    unicodeState.category = 'all';
+                    unicodeState.page = 0;
+                    await submitted.deferReply({ flags: MessageFlags.Ephemeral });
+                    await roleInteraction.editReply(buildUnicodeEmojiPickerPayload(unicodeState, customIdPrefix));
+                    await submitted.editReply({
+                        content: query ? `Emoji results updated for “${query.slice(0, 50)}”.` : 'Emoji search cleared.',
+                        allowedMentions: { parse: [] },
+                    });
+                    return;
+                }
+                if (component.customId === `${customIdPrefix}_unicode_manual`) {
+                    const manual = await requestManualEmoji(component, customIdPrefix);
+                    if (manual) {
+                        finish(manual);
+                        collector.stop('selected');
+                    }
+                    return;
+                }
+                if (component.customId === `${customIdPrefix}_unicode_select`) {
+                    const value = component.values[0];
+                    if (value === 'no-results') return;
+                    finish({ input: value, interaction: component });
+                    collector.stop('selected');
+                }
+            } catch (error) {
+                logger.error('Reaction-role emoji picker interaction failed:', error);
+                await replyUserError(component, {
+                    type: ErrorTypes.UNKNOWN,
+                    message: 'The emoji picker could not be updated. Please try again.',
+                }).catch(() => {});
+                finish(null);
+                collector.stop('error');
+            }
         });
         collector.on('end', () => finish(null));
     });
 
-    if (!selection) {
+    if (!selected) {
         await roleInteraction.editReply({ components: [] }).catch(() => {});
         return null;
     }
-    if (selection.values?.[0] !== 'manual') {
-        return { input: selection.values[0], interaction: selection };
-    }
-
-    const modalCustomId = `rr_manual_emoji_${selection.id}`;
-    const modal = new ModalBuilder()
-        .setCustomId(modalCustomId)
-        .setTitle('Enter Reaction Emoji')
-        .addComponents(
-            new ActionRowBuilder().addComponents(
-                new TextInputBuilder()
-                    .setCustomId('reaction_emoji')
-                    .setLabel('Emoji or server emoji markup')
-                    .setPlaceholder('Paste a Unicode emoji or <:name:id>')
-                    .setStyle(TextInputStyle.Short)
-                    .setMaxLength(100)
-                    .setRequired(true),
-            ),
-        );
-    try {
-        await selection.showModal(modal);
-    } catch (error) {
-        logger.error('Could not show the manual reaction-role emoji modal:', error);
-        await replyUserError(selection, {
-            type: ErrorTypes.UNKNOWN,
-            message: 'Could not open manual emoji entry. Please try again.',
-        }).catch(() => {});
-        return null;
-    }
-
-    const submitted = await selection.awaitModalSubmit({
-        filter: i => i.customId === modalCustomId && i.user.id === selection.user.id,
-        time: 120_000,
-    }).catch(() => null);
-    if (!submitted) return null;
-    return {
-        input: submitted.fields.getTextInputValue('reaction_emoji'),
-        interaction: submitted,
-    };
+    return selected;
 }
 
 async function handleAddReactionRole(roleInteraction, role, rootInteraction, panelData, guildId, guild, client) {
@@ -982,7 +1214,15 @@ async function handleAddReactionRole(roleInteraction, role, rootInteraction, pan
             throw createError(
                 'Invalid reaction emoji',
                 ErrorTypes.VALIDATION,
-                'Use an available custom emoji from this server, such as `<:name:id>`, or paste exactly one Unicode emoji.',
+                'Choose a server emoji, paste valid custom emoji markup, or enter exactly one Unicode emoji.',
+                { guildId: guild.id },
+            );
+        }
+        if (emoji.isExternal && !guild.members.me?.permissions.has(PermissionFlagsBits.UseExternalEmojis)) {
+            throw createError(
+                'Bot cannot use external emoji',
+                ErrorTypes.PERMISSION,
+                'I need the **Use External Emojis** permission to use a custom emoji from another server.',
                 { guildId: guild.id },
             );
         }
@@ -1245,8 +1485,8 @@ async function handleDeletePanel(btnInteraction, rootInteraction, panelData, pan
     }
 }
 
-async function addPanelReactions(message, reactionRoles = []) {
+export async function addPanelReactions(message, reactionRoles = []) {
     for (const mapping of reactionRoles) {
-        await message.react(mapping.emojiKey);
+        await message.react(mapping.emojiDisplay || mapping.emojiKey);
     }
 }

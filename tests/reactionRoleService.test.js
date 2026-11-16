@@ -5,7 +5,9 @@ import {
   updateReactionRolePanelImage,
 } from '../src/services/reactionRoleService.js';
 import {
+  addPanelReactions,
   buildEmojiPickerPayload,
+  buildUnicodeEmojiPickerPayload,
   buildReactionPanelEmbed,
   buildReactionRoleDashboardPayload,
   buildReactionRoleImageEditPayload,
@@ -168,13 +170,38 @@ test('emoji picker provides paginated server emojis and a manual Unicode option'
   const pageButtons = firstPage[1].components.map(button => button.toJSON());
 
   assert.equal(firstOptions.length, 25);
-  assert.equal(firstOptions.at(-1).value, 'manual');
+  assert.equal(firstOptions.at(-2).value, 'manual');
+  assert.equal(firstOptions.at(-1).value, 'unicode');
   assert.equal(pageButtons[0].disabled, true);
   assert.equal(pageButtons[1].disabled, false);
 
   const secondPage = buildEmojiPickerPayload(emojis, 1, 'emoji-picker').components;
   const secondOptions = secondPage[0].components[0].toJSON().options;
-  assert.equal(secondOptions.length, 3);
-  assert.equal(secondOptions[0].value, emojis[24].id);
-  assert.equal(secondOptions.at(-1).value, 'manual');
+  assert.equal(secondOptions.length, 5);
+  assert.equal(secondOptions[0].value, emojis[23].id);
+  assert.equal(secondOptions.at(-2).value, 'manual');
+  assert.equal(secondOptions.at(-1).value, 'unicode');
+});
+
+test('Unicode emoji picker searches by name and includes skin-tone variants', () => {
+  const payload = buildUnicodeEmojiPickerPayload({
+    category: 'People & Body',
+    query: 'waving hand light skin tone',
+    page: 0,
+  }, 'unicode-picker');
+  const categoryOptions = payload.components[0].components[0].toJSON().options;
+  const emojiOptions = payload.components[1].components[0].toJSON().options;
+
+  assert.ok(categoryOptions.some(option => option.value === 'People & Body' && option.default));
+  assert.equal(emojiOptions.length, 1);
+  assert.equal(emojiOptions[0].value, '👋🏻');
+});
+
+test('panel reposts use stored emoji markup for pasted custom emojis', async () => {
+  const reactions = [];
+  await addPanelReactions({ react: async emoji => reactions.push(emoji) }, [
+    { emojiKey: '12345678901234567', emojiDisplay: '<a:external_emoji:12345678901234567>' },
+    { emojiKey: '🎨', emojiDisplay: '🎨' },
+  ]);
+  assert.deepEqual(reactions, ['<a:external_emoji:12345678901234567>', '🎨']);
 });

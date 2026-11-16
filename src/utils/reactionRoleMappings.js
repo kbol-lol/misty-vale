@@ -6,15 +6,33 @@ export function getReactionRoleEmojiKey(emoji) {
 
 export function parseReactionRoleEmoji(guild, input) {
   const value = String(input ?? '').trim();
-  const customMatch = /^<(a?):([A-Za-z0-9_]+):(\d{17,20})>$/.exec(value);
+  const customMatch = /^<(a?):([A-Za-z0-9_]{2,32}):(\d{17,20})>$/.exec(value);
   const customId = customMatch?.[3] || (/^\d{17,20}$/.test(value) ? value : null);
   const shorthandName = /^:([A-Za-z0-9_]+):$/.exec(value)?.[1];
 
-  if (customId || shorthandName) {
-    const emoji = customId
-      ? guild.emojis.cache.get(customId)
-      : guild.emojis.cache.find((candidate) => candidate.name === shorthandName);
-    if (!emoji || !emoji.available) return null;
+  if (customId) {
+    const emoji = guild.emojis.cache.get(customId);
+    if (emoji?.available) {
+      return {
+        key: emoji.id,
+        display: emoji.toString(),
+        reactValue: emoji.id,
+      };
+    }
+
+    if (!customMatch) return null;
+
+    return {
+      key: customId,
+      display: value,
+      reactValue: value,
+      isExternal: true,
+    };
+  }
+
+  if (shorthandName) {
+    const emoji = guild.emojis.cache.find((candidate) => candidate.name === shorthandName);
+    if (!emoji?.available) return null;
 
     return {
       key: emoji.id,

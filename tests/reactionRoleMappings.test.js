@@ -49,6 +49,16 @@ test('reaction emoji input accepts server custom emoji and one Unicode emoji', (
   assert.equal(parseReactionRoleEmoji(guild, 'not-an-emoji'), null);
 });
 
+test('reaction emoji input accepts pasted custom emoji from another server', () => {
+  const guild = { emojis: { cache: { get: () => null, find: () => null } } };
+  assert.deepEqual(parseReactionRoleEmoji(guild, '<a:external_emoji:12345678901234567>'), {
+    key: '12345678901234567',
+    display: '<a:external_emoji:12345678901234567>',
+    reactValue: '<a:external_emoji:12345678901234567>',
+    isExternal: true,
+  });
+});
+
 test('reaction panels accept at most 20 unique emoji-role mappings', () => {
   const panel = makePanel();
 
