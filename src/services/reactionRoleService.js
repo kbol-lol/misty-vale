@@ -165,6 +165,68 @@ export async function createReactionRolePanel(client, guildId, channelId, messag
     return data;
 }
 
+export async function updateReactionRolePanelImage(client, guildId, messageId, { imageUrl = null, imageName = null } = {}) {
+    validateGuildId(guildId);
+    validateMessageId(messageId);
+
+    if ((imageUrl === null) !== (imageName === null)) {
+        throw createError(
+            'Invalid reaction-role image metadata',
+            ErrorTypes.VALIDATION,
+            'An image URL and file name must be provided together.',
+            { guildId, messageId },
+        );
+    }
+
+    if (imageUrl !== null) {
+        let parsedUrl;
+        try {
+            parsedUrl = new URL(imageUrl);
+        } catch {
+            throw createError(
+                'Invalid reaction-role image URL',
+                ErrorTypes.VALIDATION,
+                'The image URL is invalid.',
+                { guildId, messageId },
+            );
+        }
+        if (!['http:', 'https:'].includes(parsedUrl.protocol) || typeof imageName !== 'string' || !imageName.trim()) {
+            throw createError(
+                'Invalid reaction-role image metadata',
+                ErrorTypes.VALIDATION,
+                'Choose a valid image file.',
+                { guildId, messageId },
+            );
+        }
+    }
+
+    return Mutex.runExclusive(`reaction-role-panel:${guildId}:${messageId}`, async () => {
+        const data = await getReactionRoleMessage(client, guildId, messageId);
+        if (!data || data.mode !== 'reaction') {
+            throw createError(
+                `Reaction-role panel ${messageId} was not found`,
+                ErrorTypes.CONFIGURATION,
+                'This is not an active reaction-role panel.',
+                { guildId, messageId },
+            );
+        }
+
+        const updated = { ...data, imageUrl, imageName };
+        const saved = await client.db.set(getReactionRoleKey(guildId, messageId), updated);
+        if (saved === false) {
+            throw createError(
+                `Could not save reaction-role image for panel ${messageId}`,
+                ErrorTypes.DATABASE,
+                'Failed to save the panel image. Please try again.',
+                { guildId, messageId },
+            );
+        }
+
+        logger.info(`${imageUrl ? 'Updated' : 'Removed'} image for reaction-role panel ${messageId} in guild ${guildId}`);
+        return updated;
+    });
+}
+
 export async function addReactionRoleMapping(client, guildId, messageId, mapping) {
     validateGuildId(guildId);
     validateMessageId(messageId);

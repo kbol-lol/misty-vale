@@ -60,9 +60,11 @@ Create a native reaction panel with `/reactroles reaction-setup`, then use
 `/reactroles dashboard` to add or remove emoji/role pairs. Discord limits each
 message to 20 distinct reactions; the bot supports up to five native reaction
 panels per server (up to 100 reaction roles total). Each panel can have its own
-optional image attachment. Add custom emoji by pasting its server emoji markup
-(for example, `<:emoji_name:12345678901234567>`). Role dropdown panels remain a
-separate feature.
+optional image attachment, which can be replaced or removed later in the
+dashboard. The emoji picker lists the server's custom emojis with pagination;
+choose manual entry to paste a Unicode emoji from your emoji picker or server
+emoji markup (for example, `<:emoji_name:12345678901234567>`). Role dropdown
+panels remain a separate feature.
 
 ### Reaction Limiter
 - **Per-message caps** - Limits how many people can use a selected emoji on any message

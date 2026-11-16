@@ -1,5 +1,5 @@
 import { getColor } from '../../config/bot.js';
-import { SlashCommandBuilder, PermissionFlagsBits, ChannelType, ActionRowBuilder, StringSelectMenuBuilder, StringSelectMenuOptionBuilder, RoleSelectMenuBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, ButtonBuilder, ButtonStyle, MessageFlags, ComponentType, EmbedBuilder, LabelBuilder, CheckboxBuilder, TextDisplayBuilder } from 'discord.js';
+import { SlashCommandBuilder, PermissionFlagsBits, ChannelType, ActionRowBuilder, StringSelectMenuBuilder, StringSelectMenuOptionBuilder, RoleSelectMenuBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, ButtonBuilder, ButtonStyle, MessageFlags, ComponentType, EmbedBuilder, LabelBuilder, CheckboxBuilder, TextDisplayBuilder, FileUploadBuilder } from 'discord.js';
 import { successEmbed } from '../../utils/embeds.js';
 import { logger } from '../../utils/logger.js';
 import { createError, KbolsBotError, ErrorTypes, replyUserError, handleInteractionError } from '../../utils/errorHandler.js';
@@ -11,6 +11,7 @@ import {
     getAllReactionRoleMessages,
     deleteReactionRoleMessage,
     removeReactionRoleMapping,
+    updateReactionRolePanelImage,
 } from '../../services/reactionRoleService.js';
 import { logEvent, EVENT_TYPES } from '../../services/loggingService.js';
 import {
@@ -268,7 +269,7 @@ async function rebuildLivePanelMessage(guild, panelData) {
     }
 }
 
-function buildReactionPanelEmbed(panelData) {
+export function buildReactionPanelEmbed(panelData) {
     const mappings = Array.isArray(panelData.reactionRoles) ? panelData.reactionRoles : [];
     const roleLines = mappings.map(({ emojiDisplay, roleId }) => `${emojiDisplay} — <@&${roleId}>`);
     const description = [
@@ -292,6 +293,27 @@ function buildReactionPanelEmbed(panelData) {
     return embed;
 }
 
+export function buildReactionRoleImageEditPayload(discordMsg, panelData, image, previousImageName = panelData.imageName) {
+    const updatedPanel = {
+        ...panelData,
+        imageUrl: image?.url ?? null,
+        imageName: image?.name ?? null,
+    };
+    const keptAttachments = discordMsg.attachments
+        .filter(attachment => attachment.name !== previousImageName)
+        .map(({ id }) => ({ id }));
+
+    return {
+        panelData: updatedPanel,
+        messagePayload: {
+            embeds: [buildReactionPanelEmbed(updatedPanel)],
+            components: [],
+            attachments: keptAttachments,
+            files: image ? [{ attachment: image.url, name: image.name }] : [],
+        },
+    };
+}
+
 async function showPanelDashboard(interaction, panelData, discordMsg, guildId, guild, client, panelStatus = null) {
     if (!panelStatus && client) {
         panelStatus = await getReactionRolePanelStatus(client, guild, panelData);
@@ -305,7 +327,7 @@ async function showPanelDashboard(interaction, panelData, discordMsg, guildId, g
     await InteractionHelper.safeEditReply(interaction, { ...payload, flags: DASHBOARD_EPHEMERAL });
 }
 
-function buildReactionRoleDashboardPayload(panelData, discordMsg, guildId, guild, panelStatus = null) {
+export function buildReactionRoleDashboardPayload(panelData, discordMsg, guildId, guild, panelStatus = null) {
     const channel = guild.channels.cache.get(panelData.channelId);
     const title = discordMsg?.embeds?.[0]?.title ?? 'Untitled Panel';
     const roleCount = panelData.reactionRoles?.length || 0;
@@ -328,7 +350,7 @@ function buildReactionRoleDashboardPayload(panelData, discordMsg, guildId, guild
             { name: 'Panel Status', value: formatPanelStatusField(panelStatus), inline: false },
             { name: 'Channel', value: channel ? `<#${channel.id}>` : '`Not found`', inline: true },
             { name: 'Roles', value: `\`${roleCount} / ${MAX_REACTION_ROLES_PER_MESSAGE}\``, inline: true },
-            { name: '\u200B', value: '\u200B', inline: true },
+            { name: 'Panel Image', value: panelData.imageUrl || panelData.imageName ? 'Set' : 'Not set', inline: true },
             { name: 'Role List', value: displayedRoleList, inline: false },
         )
         .setFooter({ text: 'Dashboard closes after 10 minutes of inactivity' })
@@ -377,6 +399,11 @@ function buildReactionRoleDashboardPayload(panelData, discordMsg, guildId, guild
                           .setEmoji('➖'),
                   ]
                 : []),
+            new StringSelectMenuOptionBuilder()
+                .setLabel('Add or Remove Panel Image')
+                .setDescription('Upload an image or submit without one to remove it')
+                .setValue('panel_image')
+                .setEmoji('🖼️'),
         );
 
     return {
@@ -386,6 +413,101 @@ function buildReactionRoleDashboardPayload(panelData, discordMsg, guildId, guild
             new ActionRowBuilder().addComponents(optionsSelect),
         ],
     };
+}
+
+async function handlePanelImage(selectInteraction, rootInteraction, panelData, guildId, guild, client) {
+    const modalCustomId = `rr_panel_image_${selectInteraction.id}`;
+    const modal = new ModalBuilder()
+        .setCustomId(modalCustomId)
+        .setTitle('Update Panel Image')
+        .addTextDisplayComponents(
+            new TextDisplayBuilder()
+                .setContent(panelData.imageUrl || panelData.imageName
+                    ? 'Upload a replacement image, or submit without a file to remove the current image.'
+                    : 'Upload an image for this panel. Submit without a file to keep the panel image-free.'),
+        )
+        .addLabelComponents(
+            new LabelBuilder()
+                .setLabel('Image file (optional)')
+                .setFileUploadComponent(
+                    new FileUploadBuilder()
+                        .setCustomId('panel_image_upload')
+                        .setRequired(false),
+                ),
+        );
+
+    try {
+        await selectInteraction.showModal(modal);
+    } catch (error) {
+        logger.error('Could not show reaction-role image modal:', error);
+        await replyUserError(selectInteraction, {
+            type: ErrorTypes.UNKNOWN,
+            message: 'Could not open the panel image editor. Please try again.',
+        }).catch(() => {});
+        return;
+    }
+
+    const submitted = await selectInteraction.awaitModalSubmit({
+        filter: i => i.customId === modalCustomId && i.user.id === selectInteraction.user.id,
+        time: 120_000,
+    }).catch(() => null);
+    if (!submitted || !await InteractionHelper.safeDefer(submitted, { flags: MessageFlags.Ephemeral })) return;
+
+    const image = submitted.fields.getUploadedFiles('panel_image_upload')?.at(0) ?? null;
+    if (image && !image.contentType?.startsWith('image/') && !/\.(png|jpe?g|gif|webp|avif)$/i.test(image.name)) {
+        await replyUserError(submitted, {
+            type: ErrorTypes.VALIDATION,
+            message: 'The uploaded file must be an image.',
+        });
+        return;
+    }
+
+    const discordMsg = await fetchPanelDiscordMessage(guild, panelData);
+    if (!discordMsg) {
+        await replyUserError(submitted, {
+            type: ErrorTypes.CONFIGURATION,
+            message: 'The reaction-role panel message could not be found. Repost it from the dashboard and try again.',
+        });
+        return;
+    }
+
+    const previousImage = { imageUrl: panelData.imageUrl ?? null, imageName: panelData.imageName ?? null };
+    try {
+        const { panelData: updatedPanel, messagePayload } = buildReactionRoleImageEditPayload(
+            discordMsg,
+            panelData,
+            image,
+            previousImage.imageName,
+        );
+        const savedPanel = await updateReactionRolePanelImage(client, guildId, panelData.messageId, {
+            imageUrl: updatedPanel.imageUrl,
+            imageName: updatedPanel.imageName,
+        });
+
+        try {
+            await discordMsg.edit(messagePayload);
+        } catch (error) {
+            await updateReactionRolePanelImage(client, guildId, panelData.messageId, previousImage)
+                .catch(rollbackError => logger.error('Failed to restore reaction-role panel image metadata:', rollbackError));
+            throw error;
+        }
+
+        Object.assign(panelData, savedPanel);
+        await InteractionHelper.safeEditReply(submitted, {
+            embeds: [successEmbed(
+                'Panel Image Updated',
+                `The panel image was ${image ? 'updated' : 'removed'}.`,
+            )],
+        });
+
+        const refreshedMessage = await fetchPanelDiscordMessage(guild, panelData);
+        await showPanelDashboard(rootInteraction, panelData, refreshedMessage, guildId, guild, client);
+    } catch (error) {
+        await handleInteractionError(submitted, error, {
+            type: 'modal',
+            customId: modalCustomId,
+        });
+    }
 }
 
 async function migrateReactionRoleMessageId(client, guildId, panelData, newMessageId) {
@@ -478,6 +600,8 @@ async function handleDashboard(interaction, selectedPanelId) {
                 await handleAddRole(selectInteraction, interaction, panelData, guildId, guild, client);
             } else if (selectedOption === 'remove_role') {
                 await handleRemoveRole(selectInteraction, interaction, panelData, guildId, guild, client);
+            } else if (selectedOption === 'panel_image') {
+                await handlePanelImage(selectInteraction, interaction, panelData, guildId, guild, client);
             }
         },
         onButton: async (btnInteraction) => {
@@ -690,38 +814,168 @@ async function handleAddRole(selectInteraction, rootInteraction, panelData, guil
     });
 }
 
-async function handleAddReactionRole(roleInteraction, role, rootInteraction, panelData, guildId, guild, client) {
-    const modalCustomId = `rr_addemoji_${roleInteraction.id}`;
+export function buildEmojiPickerPayload(emojis, page, customIdPrefix) {
+    const pageSize = 24;
+    const pageCount = Math.max(1, Math.ceil(emojis.length / pageSize));
+    const pageItems = emojis.slice(page * pageSize, (page + 1) * pageSize);
+    const emojiSelect = new StringSelectMenuBuilder()
+        .setCustomId(`${customIdPrefix}_select`)
+        .setPlaceholder('Choose a server emoji...')
+        .addOptions(
+            ...pageItems.map(emoji =>
+                new StringSelectMenuOptionBuilder()
+                    .setLabel((emoji.name || emoji.id).slice(0, 100))
+                    .setDescription(emoji.animated ? 'Animated server emoji' : 'Server emoji')
+                    .setValue(emoji.id)
+                    .setEmoji({ id: emoji.id, name: emoji.name, animated: emoji.animated }),
+            ),
+            new StringSelectMenuOptionBuilder()
+                .setLabel('Enter emoji manually')
+                .setDescription('Use any Unicode emoji or server emoji markup')
+                .setValue('manual'),
+        );
+
+    const components = [new ActionRowBuilder().addComponents(emojiSelect)];
+    if (pageCount > 1) {
+        components.push(
+            new ActionRowBuilder().addComponents(
+                new ButtonBuilder()
+                    .setCustomId(`${customIdPrefix}_previous`)
+                    .setLabel('Previous')
+                    .setStyle(ButtonStyle.Secondary)
+                    .setDisabled(page === 0),
+                new ButtonBuilder()
+                    .setCustomId(`${customIdPrefix}_next`)
+                    .setLabel('Next')
+                    .setStyle(ButtonStyle.Secondary)
+                    .setDisabled(page >= pageCount - 1),
+            ),
+        );
+    }
+
+    return {
+        embeds: [
+            new EmbedBuilder()
+                .setTitle('Choose a Reaction Emoji')
+                .setDescription(`Choose a server emoji or paste a Unicode emoji or server emoji markup manually. Page ${page + 1}/${pageCount}.`)
+                .setColor(getColor('info')),
+        ],
+        components,
+    };
+}
+
+async function chooseReactionRoleEmoji(roleInteraction, guild) {
+    const emojis = [...guild.emojis.cache.values()]
+        .filter(emoji => emoji.available !== false)
+        .sort((left, right) => (left.name || '').localeCompare(right.name || ''));
+    const customIdPrefix = `rr_emoji_${roleInteraction.id}`;
+    let page = 0;
+    const pageCount = Math.max(1, Math.ceil(emojis.length / 24));
+
+    await roleInteraction.deferReply({ flags: MessageFlags.Ephemeral });
+    const pickerMessage = await roleInteraction.editReply(buildEmojiPickerPayload(emojis, page, customIdPrefix));
+
+    const selection = await new Promise(resolve => {
+        let settled = false;
+        const finish = value => {
+            if (settled) return;
+            settled = true;
+            resolve(value);
+        };
+        const collector = roleInteraction.channel.createMessageComponentCollector({
+            filter: component =>
+                component.user.id === roleInteraction.user.id
+                && component.message.id === pickerMessage.id
+                && [
+                    `${customIdPrefix}_select`,
+                    `${customIdPrefix}_previous`,
+                    `${customIdPrefix}_next`,
+                ].includes(component.customId),
+            time: 120_000,
+        });
+
+        collector.on('collect', async component => {
+            if (component.customId === `${customIdPrefix}_previous` || component.customId === `${customIdPrefix}_next`) {
+                page += component.customId === `${customIdPrefix}_next` ? 1 : -1;
+                page = Math.min(Math.max(page, 0), pageCount - 1);
+                try {
+                    await component.update(buildEmojiPickerPayload(emojis, page, customIdPrefix));
+                } catch (error) {
+                    logger.error('Failed to paginate the reaction-role emoji picker:', error);
+                    await replyUserError(component, {
+                        type: ErrorTypes.UNKNOWN,
+                        message: 'Could not load that emoji page. Please try again.',
+                    }).catch(() => {});
+                    finish(null);
+                    collector.stop();
+                }
+                return;
+            }
+
+            finish(component);
+            collector.stop('selected');
+        });
+        collector.on('end', () => finish(null));
+    });
+
+    if (!selection) {
+        await roleInteraction.editReply({ components: [] }).catch(() => {});
+        return null;
+    }
+    if (selection.values?.[0] !== 'manual') {
+        return { input: selection.values[0], interaction: selection };
+    }
+
+    const modalCustomId = `rr_manual_emoji_${selection.id}`;
     const modal = new ModalBuilder()
         .setCustomId(modalCustomId)
-        .setTitle('Add Reaction Role')
+        .setTitle('Enter Reaction Emoji')
         .addComponents(
             new ActionRowBuilder().addComponents(
                 new TextInputBuilder()
                     .setCustomId('reaction_emoji')
-                    .setLabel('Emoji for this role')
-                    .setPlaceholder('Paste a server emoji or one Unicode emoji')
+                    .setLabel('Emoji or server emoji markup')
+                    .setPlaceholder('Paste a Unicode emoji or <:name:id>')
                     .setStyle(TextInputStyle.Short)
                     .setMaxLength(100)
                     .setRequired(true),
             ),
         );
+    try {
+        await selection.showModal(modal);
+    } catch (error) {
+        logger.error('Could not show the manual reaction-role emoji modal:', error);
+        await replyUserError(selection, {
+            type: ErrorTypes.UNKNOWN,
+            message: 'Could not open manual emoji entry. Please try again.',
+        }).catch(() => {});
+        return null;
+    }
 
-    await roleInteraction.showModal(modal);
-    const submitted = await roleInteraction.awaitModalSubmit({
-        filter: (interaction) =>
-            interaction.customId === modalCustomId && interaction.user.id === roleInteraction.user.id,
+    const submitted = await selection.awaitModalSubmit({
+        filter: i => i.customId === modalCustomId && i.user.id === selection.user.id,
         time: 120_000,
     }).catch(() => null);
-    if (!submitted) return;
+    if (!submitted) return null;
+    return {
+        input: submitted.fields.getTextInputValue('reaction_emoji'),
+        interaction: submitted,
+    };
+}
+
+async function handleAddReactionRole(roleInteraction, role, rootInteraction, panelData, guildId, guild, client) {
+    const selected = await chooseReactionRoleEmoji(roleInteraction, guild);
+    if (!selected) return;
+    const { input, interaction: submitted } = selected;
 
     const deferred = await InteractionHelper.safeDefer(submitted, { flags: MessageFlags.Ephemeral });
     if (!deferred) return;
+    await roleInteraction.editReply({ content: 'Emoji selected.', embeds: [], components: [] }).catch(() => {});
 
     let addedReaction = null;
     let mappingSaved = false;
     try {
-        const emoji = parseReactionRoleEmoji(guild, submitted.fields.getTextInputValue('reaction_emoji'));
+        const emoji = parseReactionRoleEmoji(guild, input);
         if (!emoji) {
             throw createError(
                 'Invalid reaction emoji',
@@ -772,8 +1026,8 @@ async function handleAddReactionRole(roleInteraction, role, rootInteraction, pan
             });
         }
         await handleInteractionError(submitted, error, {
-            type: 'modal',
-            customId: modalCustomId,
+            type: 'component',
+            customId: submitted.customId,
         });
     }
 }
