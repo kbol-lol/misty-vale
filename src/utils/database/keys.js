@@ -5,6 +5,10 @@
 
 export const getGuildConfigKey = (guildId) => `guild:${guildId}:config`;
 
+export const getScheduleTasksKey = (guildId) => `guild:${guildId}:schedule:tasks`;
+
+export const getScheduleActivityKey = (guildId) => `guild:${guildId}:schedule:activity`;
+
 export function getTicketKey(guildId, channelId) {
     return `guild:${guildId}:ticket:${channelId}`;
 }

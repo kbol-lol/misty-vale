@@ -7,6 +7,8 @@ import {
     getTicketCounterKey,
     getServerCountersKey,
     getGuildConfigKey,
+    getScheduleTasksKey,
+    getScheduleActivityKey,
     getWelcomeConfigKey,
 } from './keys.js';
 
@@ -21,6 +23,8 @@ const TEMP_BACKED_TYPES = new Set([
     'application_users',
     'jointocreate_config',
     'jointocreate_channels',
+    'schedule_tasks',
+    'schedule_activity',
     'invite_data',
     'giveaway_entry',
     'giveaway_lock',
@@ -57,6 +61,9 @@ export function parseKey(key) {
         }
         if (parts[2] === 'welcome') {
             return { type: 'welcome_config', guildId, fullKey };
+        }
+        if (parts[2] === 'schedule' && ['tasks', 'activity'].includes(parts[3])) {
+            return { type: `schedule_${parts[3]}`, guildId, fullKey };
         }
         if (parts[2] === 'economy' && parts[3]) {
             return { type: 'economy', guildId, userId: parts[3], fullKey };
@@ -166,6 +173,8 @@ export function getStructuredListPlan(prefix, tables) {
             getGuildConfigKey(guildId),
             getWelcomeConfigKey(guildId),
             getServerCountersKey(guildId),
+            getScheduleTasksKey(guildId),
+            getScheduleActivityKey(guildId),
             `guild:${guildId}:applications:roles`,
             `guild:${guildId}:applications:settings`,
             `guild:${guildId}:jointocreate`,

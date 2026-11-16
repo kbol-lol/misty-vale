@@ -27,6 +27,7 @@ Kbols Bot offers tools for Discord server management and community engagement:
 - **User Notes** - Keep detailed moderation records
 - **Case Management** - View and track all mod actions
 - **Honeypot** - Configure a restricted channel, automatic message deletion, ban/kick/timeout response, optional editable DM, and a moderation log channel with `/honeypot dashboard`
+- **Scheduled Tasks** - Recurring announcements and configurable inactivity rules with a preview-first dashboard
 
 ### Economy System
 - **Shop & Inventory** - Buy and manage items
@@ -102,6 +103,22 @@ limits should be enforced.
 </td>
 </tr>
 </table>
+
+### Scheduled Tasks
+
+Use `/schedule announcement` to schedule recurring messages by interval (minutes,
+hours, or days). Optional role/user mentions and `@here`/`@everyone` pings can be
+configured. Use `/schedule inactivity` to monitor message/reaction activity and
+choose an action (ban, kick, timeout, or role removal), target/exempt roles,
+warning settings, log channel, and per-run safety limit.
+
+Open `/schedule dashboard` to inspect tasks, pause or enable them, send an
+announcement immediately, preview an inactivity rule, or delete a task. Edit a
+task by re-running its matching command with the task ID shown in the dashboard.
+Inactivity rules simulate actions by default. To enable actual punishments, set
+`live` to true; this requires PostgreSQL, the appropriate bot permissions, and a
+log channel. A bot restart restarts the activity observation window, so a member
+is not punished for activity that happened while the bot was offline.
 
 ### Rock-Paper-Scissors
 

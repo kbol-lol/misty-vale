@@ -12,6 +12,7 @@ import { logger, startupLog, shutdownLog } from './utils/logger.js';
 import { checkGiveaways } from './services/giveawayService.js';
 import { loadCommands, registerCommands as registerSlashCommands } from './handlers/loaders/commandLoader.js';
 import { runSafeTask, handleTaskError, ErrorCodes } from './utils/errorHandler.js';
+import { flushScheduleActivity, runScheduleTick, startScheduleTracking } from './services/scheduleService.js';
 import pkg from '../package.json' with { type: 'json' };
 import { EXPECTED_SCHEMA_VERSION, EXPECTED_SCHEMA_LABEL } from './config/database/schemaVersion.js';
 
@@ -253,6 +254,9 @@ class KbolsBot extends Client {
   setupCronJobs() {
     cron.schedule('* * * * *', runSafeTask('giveaway_check', () => checkGiveaways(this)));
     cron.schedule('*/15 * * * *', runSafeTask('counter_update', () => this.updateAllCounters()));
+    void startScheduleTracking(this).catch((error) => logger.error('Failed to start schedule tracking:', error));
+    cron.schedule('* * * * *', runSafeTask('schedule_check', () => runScheduleTick(this)));
+    cron.schedule('* * * * *', runSafeTask('schedule_activity_flush', () => flushScheduleActivity(this)));
   }
 
   async updateAllCounters() {
@@ -345,6 +349,8 @@ class KbolsBot extends Client {
       logger.info('Stopping cron jobs...');
       cron.getTasks().forEach(task => task.stop());
       logger.info('✅ Cron jobs stopped');
+
+      await flushScheduleActivity(this);
 
       if (this.webServer) {
         logger.info('Closing web server...');

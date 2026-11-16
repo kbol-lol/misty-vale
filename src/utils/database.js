@@ -14,6 +14,8 @@ export {
 
 export {
     getGuildConfigKey,
+    getScheduleTasksKey,
+    getScheduleActivityKey,
     getTicketKey,
     getTicketCounterKey,
     getInviteTrackingKey,
