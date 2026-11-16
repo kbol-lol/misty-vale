@@ -69,11 +69,14 @@ feature.
 
 ### Reaction Limiter
 - **Per-message caps** - Limits how many people can use a selected emoji on any message
-- **Live configuration** - Manage each server's emoji caps with `/reactionlimit`
+- **Channel controls** - Enable or disable reaction limits for individual channels
+- **Live dashboard** - Manage emoji caps and channel settings with `/reactionlimit dashboard`
 
-Use `/reactionlimit add`, `/reactionlimit set`, `/reactionlimit remove`, and
-`/reactionlimit list` to manage a server's limits in real time. The value is
-the maximum number of human users who may react with that emoji to one message.
+Use `/reactionlimit dashboard` to add, edit, or remove emoji limits and enable
+or disable the limiter per channel. Emoji limits are shared across channels
+where the limiter is enabled. The value is the maximum number of human users
+who may react with that emoji to one message. The `/reactionlimit add`, `set`,
+`remove`, and `list` subcommands remain available.
 Custom emoji use Discord's standard format:
 
 ```js
@@ -83,7 +86,8 @@ Custom emoji use Discord's standard format:
 The `src/config/reactionLimiter.js` file supplies the defaults for new servers.
 
 The bot needs the **Manage Messages** permission in channels where reaction
-limits should be enforced.
+limits should be enforced. Limits for custom emojis are removed automatically
+when those emojis are deleted from the server.
 
 </td>
 <td width="50%" valign="top">

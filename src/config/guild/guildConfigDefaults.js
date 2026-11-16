@@ -18,5 +18,6 @@ export const GUILD_CONFIG_DEFAULTS = {
     reactionLimiter: {
         enabled: reactionLimiterConfig.enabled,
         limits: { ...reactionLimiterConfig.limits },
+        channelOverrides: { ...reactionLimiterConfig.channelOverrides },
     },
 };

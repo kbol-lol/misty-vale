@@ -1,5 +1,6 @@
 import { Events } from 'discord.js';
 import { getGuildConfig } from '../services/config/guildConfig.js';
+import { isReactionLimiterEnabledForChannel } from '../config/reactionLimiter.js';
 import { logger } from '../utils/logger.js';
 import { Mutex } from '../utils/mutex.js';
 import { handleReactionRoleAssignment } from '../services/reactionRoleAssignment.js';
@@ -38,7 +39,8 @@ export default {
       // effect immediately without requiring a bot restart.
       const guildConfig = await getGuildConfig(message.client, message.guild.id);
       const limiterConfig = guildConfig.reactionLimiter;
-      if (!limiterConfig?.enabled) {
+      const channelId = message.channelId || message.channel?.id;
+      if (!isReactionLimiterEnabledForChannel(limiterConfig, channelId)) {
         return;
       }
 

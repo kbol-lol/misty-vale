@@ -26,6 +26,7 @@ class KbolsBot extends Client {
 
         GatewayIntentBits.GuildMessages,                
         GatewayIntentBits.GuildMessageReactions,        
+        GatewayIntentBits.GuildExpressions,
         GatewayIntentBits.MessageContent,               
         GatewayIntentBits.DirectMessages,
 

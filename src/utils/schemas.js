@@ -63,6 +63,7 @@ const ReactionLimiterConfigSchema = z
   .object({
     enabled: z.boolean().default(true),
     limits: z.record(z.number().int().min(0).max(100000)).default({}),
+    channelOverrides: z.record(z.boolean()).default({}),
   })
   .default({ enabled: true, limits: {} });
 
