@@ -248,7 +248,7 @@ docker pull ghcr.io/codebymitch/titanbot:main
 
 ### Multiple servers
 
-Slash commands are registered **globally** on startup (via `CLIENT_ID`), so the bot works in every server it is invited to. `GUILD_ID` stays in the tutorial `.env` for setup steps but is not used for command registration.
+Slash commands are registered **globally** on startup (via `CLIENT_ID`), so the bot works in every server it is invited to. The honeypot command is also registered immediately in its configured target server; set `HONEYPOT_GUILD_ID` to override the repository's default target.
 
 Notes:
 - Global slash commands may take up to about an hour to propagate on first deploy

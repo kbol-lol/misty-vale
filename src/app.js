@@ -330,7 +330,10 @@ class TitanBot extends Client {
 
   async registerCommands() {
     try {
-      await registerSlashCommands(this, { clientId: this.config.bot.clientId });
+      await registerSlashCommands(this, {
+        clientId: this.config.bot.clientId,
+        honeypotGuildId: this.config.bot.honeypotGuildId,
+      });
     } catch (error) {
       logger.error('Error registering commands:', error);
     }
