@@ -23,11 +23,18 @@ export default {
         .setMaxValue(rpsConfig.maximumRounds)
         .setRequired(false),
     )
+    .addBooleanOption((option) =>
+      option
+        .setName('allow_ties')
+        .setDescription('Allow tied moves to count as a round (default: yes)')
+        .setRequired(false),
+    )
     .setDMPermission(false),
   category: 'Fun',
 
   async execute(interaction) {
     const rounds = interaction.options.getInteger('rounds') ?? rpsConfig.defaultRounds;
+    const allowTies = interaction.options.getBoolean('allow_ties') ?? true;
     if (!interaction.inGuild() || !interaction.channel?.isTextBased?.()) {
       await InteractionHelper.safeReply(interaction, {
         content: 'Rock-Paper-Scissors can only be started in a server text channel.',
@@ -40,6 +47,7 @@ export default {
       creatorId: interaction.user.id,
       opponentId: null,
       rounds,
+      allowTies,
       round: 1,
       scores: new Map([[interaction.user.id, 0]]),
       choices: new Map(),
@@ -150,15 +158,27 @@ async function handleGameInteraction(interaction, game, collector) {
 }
 
 async function finishRound(game, collector) {
-  const result = resolveRpsRound(game);
+  const result = resolveRpsRound(game, { allowTies: game.allowTies });
   const { firstMove, secondMove, winnerId, round, isFinalRound } = result;
   let roundDescription;
 
   if (!winnerId) {
-    roundDescription = format(rpsConfig.text.roundTie, {
+    const roundTieText = format(rpsConfig.text.roundTie, {
       round,
       move: displayMove(firstMove),
     });
+    roundDescription = result.tiebreakStarted
+      ? `The match is tied; sudden death begins after this tie. ${roundTieText}`
+      : result.tiebreak
+        ? `Sudden-death round: ${roundTieText}`
+        : roundTieText;
+    if (result.replay) {
+      await game.message.edit({
+        embeds: [makeMoveEmbed(game, `${roundDescription}\n\n${makeMoveDescription(game)}`)],
+        components: makeMoveRows(game),
+      });
+      return;
+    }
   } else {
     const loserId = winnerId === game.creatorId ? game.opponentId : game.creatorId;
     const winnerMove = winnerId === game.creatorId ? firstMove : secondMove;

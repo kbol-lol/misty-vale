@@ -36,6 +36,61 @@ test('matching moves tie without changing scores', () => {
   }
 });
 
+test('disabled ties replay the same round without changing score', () => {
+  const game = makeGame(1);
+  game.choices.set(game.creatorId, 'rock');
+  game.choices.set(game.opponentId, 'rock');
+
+  const tied = resolveRpsRound(game, { allowTies: false });
+
+  assert.equal(tied.replay, true);
+  assert.equal(tied.round, 1);
+  assert.equal(tied.isFinalRound, false);
+  assert.equal(game.round, 1);
+  assert.equal(game.choices.size, 0);
+  assert.equal(game.scores.get(game.creatorId), 0);
+  assert.equal(game.scores.get(game.opponentId), 0);
+  assert.equal(game.finished, false);
+
+  game.choices.set(game.creatorId, 'rock');
+  game.choices.set(game.opponentId, 'scissors');
+  const decided = resolveRpsRound(game, { allowTies: false });
+
+  assert.equal(decided.replay, false);
+  assert.equal(decided.isFinalRound, true);
+  assert.equal(decided.winnerId, game.creatorId);
+  assert.equal(game.finished, true);
+});
+
+test('disabled ties use a sudden-death round when the match score is tied', () => {
+  const game = makeGame(4);
+  const rounds = [
+    ['rock', 'scissors'],
+    ['rock', 'scissors'],
+    ['scissors', 'rock'],
+    ['scissors', 'rock'],
+  ];
+
+  for (const [firstMove, secondMove] of rounds) {
+    game.choices.set(game.creatorId, firstMove);
+    game.choices.set(game.opponentId, secondMove);
+    resolveRpsRound(game, { allowTies: false });
+  }
+
+  assert.equal(game.scores.get(game.creatorId), 2);
+  assert.equal(game.scores.get(game.opponentId), 2);
+  assert.equal(game.round, 5);
+  assert.equal(game.finished, false);
+
+  game.choices.set(game.creatorId, 'rock');
+  game.choices.set(game.opponentId, 'scissors');
+  const result = resolveRpsRound(game, { allowTies: false });
+
+  assert.equal(result.isFinalRound, true);
+  assert.equal(result.winnerId, game.creatorId);
+  assert.equal(game.finished, true);
+});
+
 test('round counts from one through five finish on the requested round', () => {
   for (let rounds = 1; rounds <= 5; rounds += 1) {
     const game = makeGame(rounds);

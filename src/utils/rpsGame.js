@@ -2,24 +2,48 @@ export const RPS_MOVES = ['rock', 'paper', 'scissors'];
 
 const MOVE_BEATS = { rock: 'scissors', paper: 'rock', scissors: 'paper' };
 
-export function resolveRpsRound(game) {
+export function resolveRpsRound(game, { allowTies = true } = {}) {
   const firstMove = game.choices.get(game.creatorId);
   const secondMove = game.choices.get(game.opponentId);
   let winnerId = null;
   const round = game.round;
+
+  if (firstMove === secondMove && !allowTies) {
+    game.choices.clear();
+    return {
+      firstMove,
+      secondMove,
+      winnerId,
+      round,
+      isFinalRound: false,
+      replay: true,
+      tiebreak: game.round > game.rounds,
+      tiebreakStarted: false,
+    };
+  }
 
   if (firstMove !== secondMove) {
     winnerId = MOVE_BEATS[firstMove] === secondMove ? game.creatorId : game.opponentId;
     game.scores.set(winnerId, (game.scores.get(winnerId) ?? 0) + 1);
   }
 
-  const isFinalRound = round >= game.rounds;
+  let isFinalRound = round >= game.rounds;
+  let tiebreak = false;
+  let tiebreakStarted = false;
+  if (isFinalRound && !allowTies && game.scores.get(game.creatorId) === game.scores.get(game.opponentId)) {
+    game.round += 1;
+    game.choices.clear();
+    isFinalRound = false;
+    tiebreak = true;
+    tiebreakStarted = true;
+  }
+
   if (isFinalRound) {
     game.finished = true;
-  } else {
+  } else if (!tiebreak) {
     game.round += 1;
     game.choices.clear();
   }
 
-  return { firstMove, secondMove, winnerId, round, isFinalRound };
+  return { firstMove, secondMove, winnerId, round, isFinalRound, replay: false, tiebreak, tiebreakStarted };
 }
