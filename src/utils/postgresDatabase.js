@@ -21,26 +21,6 @@ import {
     triggerDefinitions,
 } from './database/schema.js';
 
-function normalizeTimestampInput(value, fallback = new Date()) {
-    if (value instanceof Date && !Number.isNaN(value.getTime())) {
-        return value;
-    }
-
-    const numericValue = typeof value === 'string' && /^[0-9]+$/.test(value)
-        ? Number(value)
-        : Number(value);
-
-    if (Number.isFinite(numericValue) && numericValue >= 0) {
-        const date = new Date(numericValue);
-        if (!Number.isNaN(date.getTime())) {
-            return date;
-        }
-    }
-
-    const parsedDate = new Date(value);
-    return !Number.isNaN(parsedDate.getTime()) ? parsedDate : fallback;
-}
-
 class PostgreSQLDatabase {
     constructor() {
         this.pool = null;
@@ -636,30 +616,6 @@ class PostgreSQLDatabase {
                     );
                     return welcomeResult.rows.length > 0 ? welcomeResult.rows[0].config : defaultValue;
                 
-                case 'leveling_config':
-                    const levelingConfigResult = await this.pool.query(
-                        `SELECT config FROM ${pgConfig.tables.leveling_configs} WHERE guild_id = $1`,
-                        [parsedKey.guildId]
-                    );
-                    return levelingConfigResult.rows.length > 0 ? levelingConfigResult.rows[0].config : defaultValue;
-                
-                case 'user_level': {
-                    const userLevelResult = await this.pool.query(
-                        `SELECT xp, level, total_xp, last_message, rank FROM ${pgConfig.tables.user_levels} WHERE guild_id = $1 AND user_id = $2`,
-                        [parsedKey.guildId, parsedKey.userId]
-                    );
-                    if (userLevelResult.rows.length === 0) return defaultValue;
-                    // Map snake_case columns to the camelCase shape consumers expect
-                    const levelRow = userLevelResult.rows[0];
-                    return {
-                        xp: Number(levelRow.xp) || 0,
-                        level: Number(levelRow.level) || 0,
-                        totalXp: Number(levelRow.total_xp) || 0,
-                        lastMessage: Number(levelRow.last_message) || 0,
-                        rank: Number(levelRow.rank) || 0,
-                    };
-                }
-                
                 case 'economy': {
                     const economyResult = await this.pool.query(
                         `SELECT balance, bank, data FROM ${pgConfig.tables.economy} WHERE guild_id = $1 AND user_id = $2`,
@@ -762,49 +718,6 @@ class PostgreSQLDatabase {
                          VALUES ($1, $2, CURRENT_TIMESTAMP) 
                          ON CONFLICT (guild_id) DO UPDATE SET config = $2, updated_at = CURRENT_TIMESTAMP`,
                         [parsedKey.guildId, value]
-                    );
-                    return true;
-                
-                case 'leveling_config':
-                    await this.pool.query(
-                        `INSERT INTO ${pgConfig.tables.guilds} (id, created_at) 
-                         VALUES ($1, CURRENT_TIMESTAMP) 
-                         ON CONFLICT (id) DO NOTHING`,
-                        [parsedKey.guildId]
-                    );
-                    
-                    await this.pool.query(
-                        `INSERT INTO ${pgConfig.tables.leveling_configs} (guild_id, config, updated_at) 
-                         VALUES ($1, $2, CURRENT_TIMESTAMP) 
-                         ON CONFLICT (guild_id) DO UPDATE SET config = $2, updated_at = CURRENT_TIMESTAMP`,
-                        [parsedKey.guildId, value]
-                    );
-                    return true;
-                
-                case 'user_level':
-                    await this.pool.query(
-                        `INSERT INTO ${pgConfig.tables.guilds} (id, created_at) 
-                         VALUES ($1, CURRENT_TIMESTAMP) 
-                         ON CONFLICT (id) DO NOTHING`,
-                        [parsedKey.guildId]
-                    );
-                    
-                    await this.pool.query(
-                        `INSERT INTO ${pgConfig.tables.users} (id, created_at) 
-                         VALUES ($1, CURRENT_TIMESTAMP) 
-                         ON CONFLICT (id) DO NOTHING`,
-                        [parsedKey.userId]
-                    );
-
-                    const lastMessageValue = value?.lastMessage ?? value?.last_message;
-                    const normalizedLastMessage = normalizeTimestampInput(lastMessageValue, new Date());
-                    
-                    await this.pool.query(
-                        `INSERT INTO ${pgConfig.tables.user_levels} (guild_id, user_id, xp, level, total_xp, last_message, rank, updated_at) 
-                         VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP) 
-                         ON CONFLICT (guild_id, user_id) DO UPDATE SET 
-                         xp = $3, level = $4, total_xp = $5, last_message = $6, rank = $7, updated_at = CURRENT_TIMESTAMP`,
-                        [parsedKey.guildId, parsedKey.userId, value.xp || 0, value.level || 0, value.totalXp || 0, normalizedLastMessage, value.rank || 0]
                     );
                     return true;
                 
@@ -941,14 +854,6 @@ class PostgreSQLDatabase {
                 
                 case 'welcome_config':
                     await this.pool.query(`DELETE FROM ${pgConfig.tables.welcome_configs} WHERE guild_id = $1`, [parsedKey.guildId]);
-                    return true;
-                
-                case 'leveling_config':
-                    await this.pool.query(`DELETE FROM ${pgConfig.tables.leveling_configs} WHERE guild_id = $1`, [parsedKey.guildId]);
-                    return true;
-                
-                case 'user_level':
-                    await this.pool.query(`DELETE FROM ${pgConfig.tables.user_levels} WHERE guild_id = $1 AND user_id = $2`, [parsedKey.guildId, parsedKey.userId]);
                     return true;
                 
                 case 'economy':

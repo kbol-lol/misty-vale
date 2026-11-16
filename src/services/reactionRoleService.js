@@ -115,7 +115,7 @@ export async function getReactionRoleMessage(client, guildId, messageId) {
         const data = await client.db.get(key);
         return data || null;
     } catch (error) {
-        if (error.name === 'TitanBotError') {
+        if (error.name === 'KbolsBotError') {
             throw error;
         }
         logger.error(`Error getting reaction role message ${messageId} in guild ${guildId}:`, error);
@@ -236,7 +236,7 @@ export async function deleteReactionRoleMessage(client, guildId, messageId) {
         logger.info(`Deleted reaction role message ${messageId} in guild ${guildId}`);
         return true;
     } catch (error) {
-        if (error.name === 'TitanBotError') {
+        if (error.name === 'KbolsBotError') {
             throw error;
         }
         logger.error(`Error deleting reaction role message in guild ${guildId}:`, error);
@@ -322,7 +322,7 @@ export async function getAllReactionRoleMessages(client, guildId) {
 
         return messages;
     } catch (error) {
-        if (error.name === 'TitanBotError') {
+        if (error.name === 'KbolsBotError') {
             throw error;
         }
         logger.error(`Error getting all reaction role messages for guild ${guildId}:`, error);

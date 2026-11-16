@@ -34,13 +34,6 @@ export const commandAliases = {
     'untimeout': 'untimeout',
     'unmute': 'untimeout',
 
-    'rank': 'rank',
-    'lvl': 'rank',
-    'xp': 'rank',
-    'leaderboard': 'leaderboard',
-    'lb': 'leaderboard',
-    'top': 'leaderboard',
-
     'shop': 'shop',
     'buy': 'buy',
     'inventory': 'inventory',
@@ -98,8 +91,6 @@ export const commandAliases = {
     'jtc': 'jointocreate',
     'jointocreate': 'jointocreate',
 
-    'np': 'nowplaying',
-    'now': 'nowplaying',
 };
 
 export const subcommandAliases = {

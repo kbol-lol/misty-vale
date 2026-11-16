@@ -140,7 +140,7 @@ export const botConfig = {
     },
     footer: {
       // Default footer text used in bot embeds.
-      text: "Misty Vale Bot",
+      text: "Kbols Bot",
       // Footer icon URL (null = no icon).
       icon: null,
     },
@@ -435,7 +435,6 @@ export const botConfig = {
   features: {
     // Core systems.
     economy: true,
-    leveling: true,
     moderation: true,
     logging: true,
     welcome: true,
@@ -457,7 +456,6 @@ export const botConfig = {
     utility: true,
     community: true,
     fun: true,
-    music: true,
   },
 };
 
@@ -519,10 +517,8 @@ const COMMAND_CATEGORY_FEATURE_MAP = {
   fun: "fun",
   giveaway: "giveaways",
   jointocreate: "joinToCreate",
-  leveling: "leveling",
   logging: "logging",
   moderation: "moderation",
-  music: "music",
   reaction_roles: "reactionRoles",
   search: "search",
   serverstats: "counter",

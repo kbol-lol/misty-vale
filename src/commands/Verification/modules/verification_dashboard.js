@@ -19,7 +19,7 @@ import {
 import { InteractionHelper } from '../../../utils/interactionHelper.js';
 import { successEmbed } from '../../../utils/embeds.js';
 import { logger } from '../../../utils/logger.js';
-import { TitanBotError, ErrorTypes, replyUserError } from '../../../utils/errorHandler.js';
+import { KbolsBotError, ErrorTypes, replyUserError } from '../../../utils/errorHandler.js';
 import { getGuildConfig, setGuildConfig } from '../../../services/config/guildConfig.js';
 import { getWelcomeConfig } from '../../../utils/database.js';
 import { botHasPermission } from '../../../utils/permissionGuard.js';
@@ -161,7 +161,7 @@ function buildButtonRow(cfg, guildId, disabled = false, panelStatus = null) {
 async function repostVerificationPanel(guild, cfg) {
     const channel = await guild.channels.fetch(cfg.channelId).catch(() => null);
     if (!channel) {
-        throw new TitanBotError(
+        throw new KbolsBotError(
             'Panel channel missing',
             ErrorTypes.CONFIGURATION,
             'The configured verification channel no longer exists. Set a new channel from the dashboard.',
@@ -247,7 +247,7 @@ export default {
             const cfg = guildConfig.verification;
 
             if (!cfg?.channelId) {
-                throw new TitanBotError(
+                throw new KbolsBotError(
                     'Verification not configured',
                     ErrorTypes.CONFIGURATION,
                     'The verification system has not been set up yet. Run `/verification setup` first.',
@@ -412,9 +412,9 @@ export default {
                 },
             });
         } catch (error) {
-            if (error instanceof TitanBotError) throw error;
+            if (error instanceof KbolsBotError) throw error;
             logger.error('Unexpected error in verification_dashboard:', error);
-            throw new TitanBotError(
+            throw new KbolsBotError(
                 `Verification dashboard failed: ${error.message}`,
                 ErrorTypes.UNKNOWN,
                 'Failed to open the verification dashboard.',

@@ -17,7 +17,7 @@ import {
 import { getColor } from '../../config/bot.js';
 import { MAX_HONEYPOT_TIMEOUT_MINUTES } from '../../config/guild/honeypotDefaults.js';
 import { getGuildConfig, patchGuildConfig } from '../../services/config/guildConfig.js';
-import { handleInteractionError, ErrorTypes, TitanBotError } from '../../utils/errorHandler.js';
+import { handleInteractionError, ErrorTypes, KbolsBotError } from '../../utils/errorHandler.js';
 import { InteractionHelper } from '../../utils/interactionHelper.js';
 import { logger } from '../../utils/logger.js';
 
@@ -160,7 +160,7 @@ async function validateCanEnable(guild, settings) {
     const botMember = guild.members.me || await guild.members.fetchMe();
 
     if (!channel || ![ChannelType.GuildText, ChannelType.GuildAnnouncement].includes(channel.type)) {
-        throw new TitanBotError(
+        throw new KbolsBotError(
             'Honeypot channel missing',
             ErrorTypes.VALIDATION,
             'Wähle zuerst einen Text- oder Ankündigungskanal als Honeypot-Kanal.',
@@ -168,7 +168,7 @@ async function validateCanEnable(guild, settings) {
     }
 
     if (!botMember?.permissions.has(REQUIRED_PERMISSIONS[settings.action][0])) {
-        throw new TitanBotError(
+        throw new KbolsBotError(
             'Bot is missing the moderation permission',
             ErrorTypes.PERMISSION,
             `Dem Bot fehlt die Berechtigung „${REQUIRED_PERMISSIONS[settings.action][1]}“.`,
@@ -179,7 +179,7 @@ async function validateCanEnable(guild, settings) {
         PermissionFlagsBits.ViewChannel,
         PermissionFlagsBits.ManageMessages,
     ])) {
-        throw new TitanBotError(
+        throw new KbolsBotError(
             'Bot cannot delete honeypot messages',
             ErrorTypes.PERMISSION,
             'Der Bot benötigt im ausgewählten Honeypot-Kanal die Berechtigungen „Kanal ansehen“ und „Nachrichten verwalten“, damit Nachrichten gelöscht werden können.',
@@ -195,7 +195,7 @@ async function validateLogChannel(guild, channel) {
         PermissionFlagsBits.EmbedLinks,
     ];
     if (!channel.permissionsFor(botMember)?.has(requiredPermissions)) {
-        throw new TitanBotError(
+        throw new KbolsBotError(
             'Bot cannot write honeypot logs',
             ErrorTypes.PERMISSION,
             'Der Bot benötigt im Protokoll-Kanal die Berechtigungen „Kanal ansehen“, „Nachrichten senden“ und „Links einbetten“.',
@@ -260,7 +260,7 @@ async function handleModal(buttonInteraction, rootInteraction, settings, client,
                 || timeoutMinutes < 1
                 || timeoutMinutes > MAX_HONEYPOT_TIMEOUT_MINUTES
             ) {
-                throw new TitanBotError(
+                throw new KbolsBotError(
                     'Invalid timeout duration',
                     ErrorTypes.VALIDATION,
                     `Gib eine ganze Zahl zwischen 1 und ${MAX_HONEYPOT_TIMEOUT_MINUTES} Minuten ein.`,
@@ -300,7 +300,7 @@ async function handleDashboardComponent(component, rootInteraction, settings, cl
     if (component.customId === ids.channel) {
         const channel = component.channels.first();
         if (!channel || ![ChannelType.GuildText, ChannelType.GuildAnnouncement].includes(channel.type)) {
-            throw new TitanBotError(
+            throw new KbolsBotError(
                 'Invalid honeypot channel',
                 ErrorTypes.VALIDATION,
                 'Wähle einen Text- oder Ankündigungskanal aus.',
@@ -313,7 +313,7 @@ async function handleDashboardComponent(component, rootInteraction, settings, cl
     } else if (component.customId === ids.logChannel) {
         const channel = component.channels.first();
         if (!channel || ![ChannelType.GuildText, ChannelType.GuildAnnouncement].includes(channel.type)) {
-            throw new TitanBotError(
+            throw new KbolsBotError(
                 'Invalid honeypot log channel',
                 ErrorTypes.VALIDATION,
                 'Wähle einen Text- oder Ankündigungskanal als Protokoll-Kanal aus.',
@@ -324,7 +324,7 @@ async function handleDashboardComponent(component, rootInteraction, settings, cl
     } else if (component.customId === ids.action) {
         const action = component.values[0];
         if (!ACTION_OPTIONS.some(option => option.value === action)) {
-            throw new TitanBotError('Invalid honeypot action', ErrorTypes.VALIDATION, 'Diese Aktion ist nicht verfügbar.');
+            throw new KbolsBotError('Invalid honeypot action', ErrorTypes.VALIDATION, 'Diese Aktion ist nicht verfügbar.');
         }
         if (settings.enabled) {
             await validateCanEnable(component.guild, { ...settings, action });
@@ -367,7 +367,7 @@ export default {
     async execute(interaction, _config, client) {
         try {
             if (!interaction.inGuild() || !interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) {
-                throw new TitanBotError(
+                throw new KbolsBotError(
                     'Manage Server permission required',
                     ErrorTypes.PERMISSION,
                     'Du brauchst die Berechtigung „Server verwalten“, um das Honeypot-Menü zu nutzen.',

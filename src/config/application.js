@@ -24,8 +24,6 @@ const appConfig = {
     clientId: process.env.CLIENT_ID,
     // Retained for tutorial/setup compatibility; not used for command registration.
     guildId: process.env.GUILD_ID,
-    // Register the honeypot command in its target guild immediately; global commands can take time to propagate.
-    honeypotGuildId: process.env.HONEYPOT_GUILD_ID || "1530295692650745896",
 
     shop: {
       ...botConfig.shop,
@@ -74,10 +72,7 @@ const appConfig = {
 
   shop,
 
-  features: {
-    ...botConfig.features,
-    music: botConfig.features?.music ?? true,
-  },
+  features: { ...botConfig.features },
 
   env: process.env.NODE_ENV || "development",
   isProduction: process.env.NODE_ENV === "production",

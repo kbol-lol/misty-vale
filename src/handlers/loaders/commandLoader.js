@@ -270,40 +270,16 @@ async function registerGlobalCommands(client, clientId, commands, totalSubcomman
 }
 
 export async function registerCommands(client, options = {}) {
-    const { clientId = null, honeypotGuildId = null } = options;
+    const { clientId = null } = options;
 
     try {
         const { commands, totalSubcommands } = collectCommandPayloads(client);
         await registerGlobalCommands(client, clientId, commands, totalSubcommands);
         await deregisterGuildScopedCommand(client, clientId, 'rps');
-        await registerGuildScopedHoneypot(client, clientId, honeypotGuildId, commands);
+        await deregisterGuildScopedCommand(client, clientId, 'honeypot');
     } catch (error) {
         logger.error('Error registering commands:', error);
         throw error;
-    }
-}
-
-async function registerGuildScopedHoneypot(client, clientId, guildId, commands) {
-    if (!guildId) return;
-
-    const honeypotCommand = commands.find(command => command.name === 'honeypot');
-    if (!honeypotCommand) {
-        logger.warn('Could not register guild-scoped honeypot command because it was not loaded');
-        return;
-    }
-
-    const endpoint = `/applications/${clientId}/guilds/${guildId}/commands`;
-    const existingCommands = await client.rest.get(endpoint);
-    const existingHoneypot = existingCommands.find(
-        command => command.name === 'honeypot' && (command.type ?? 1) === 1,
-    );
-
-    if (existingHoneypot) {
-        await client.rest.patch(`${endpoint}/${existingHoneypot.id}`, { body: honeypotCommand });
-        logger.info(`Updated guild-scoped /honeypot command for guild ${guildId}`);
-    } else {
-        await client.rest.post(endpoint, { body: honeypotCommand });
-        logger.info(`Registered guild-scoped /honeypot command for guild ${guildId}`);
     }
 }
 
@@ -321,7 +297,7 @@ async function deregisterGuildScopedCommand(client, clientId, commandName) {
                 await client.rest.delete(`${endpoint}/${existing.id}`);
             }
             if (existingCommands.length) {
-                logger.info(`Removed temporary guild-scoped /${commandName} command from ${guild.name} (${guild.id})`);
+                logger.info(`Removed guild-scoped /${commandName} command from ${guild.name} (${guild.id})`);
             }
         } catch (error) {
             logger.error(`Failed to remove guild-scoped /${commandName} command from ${guild.name} (${guild.id}):`, error);

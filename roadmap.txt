@@ -1,4 +1,4 @@
-TitanBot Roadmap / Structure Overview
+Kbols Bot Roadmap / Structure Overview
 
 Goal
 - Keep this as a practical map of the codebase.
@@ -30,7 +30,7 @@ src/
   - Verification/             -> member verification flow
   - JoinToCreate/             -> dynamic voice channel creation
   - Reaction_roles/           -> automatic role assignment
-  - Fun/, Giveaway/, Leveling/, Search/, Tools/, Utility/, Welcome/
+  - Fun/, Giveaway/, Search/, Tools/, Utility/, Welcome/
 
 - config/                     -> centralized configuration modules
 - events/                     -> Discord event listeners

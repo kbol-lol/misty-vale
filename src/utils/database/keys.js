@@ -45,18 +45,6 @@ export function getWelcomeConfigKey(guildId) {
     return `guild:${guildId}:welcome`;
 }
 
-export function getLevelingKey(guildId) {
-    return `guild:${guildId}:leveling:config`;
-}
-
-export function getUserLevelKey(guildId, userId) {
-    return `guild:${guildId}:leveling:users:${userId}`;
-}
-
-export function getUserLevelPrefix(guildId) {
-    return `guild:${guildId}:leveling:users:`;
-}
-
 export function getApplicationRolesKey(guildId) {
     return `guild:${guildId}:applications:roles`;
 }
@@ -131,11 +119,6 @@ export const LEGACY_KEY_RESOLVERS = [
         toCanonical: ([, guildId, userId]) => getEconomyKey(guildId, userId),
     },
     {
-        pattern: /^([^:]+):leveling:users:([^:]+)$/,
-        toCanonical: ([, guildId, userId]) => getUserLevelKey(guildId, userId),
-        skipIf: (guildId) => guildId === 'guild',
-    },
-    {
         pattern: /^moderation:warnings:([^:]+):([^:]+)$/,
         toCanonical: ([, guildId, userId]) => getWarningsKey(guildId, userId),
     },
@@ -186,12 +169,6 @@ export function getLegacyVariantsForCanonical(canonicalKey) {
         const match = sample.match(/^guild:([^:]+):economy:([^:]+)$/);
         if (match && toCanonical(['', match[1], match[2]]) === canonicalKey) {
             variants.push(`economy:${match[1]}:${match[2]}`);
-            continue;
-        }
-
-        const levelMatch = sample.match(/^guild:([^:]+):leveling:users:([^:]+)$/);
-        if (levelMatch && toCanonical(['', levelMatch[1], levelMatch[2]]) === canonicalKey) {
-            variants.push(`${levelMatch[1]}:leveling:users:${levelMatch[2]}`);
             continue;
         }
 

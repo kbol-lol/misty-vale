@@ -1,7 +1,6 @@
 import {
     canonicalizeKey,
     getEconomyPrefix,
-    getUserLevelPrefix,
     getWarningsPrefix,
     getReactionRolesPrefix,
     getApplicationsPrefix,
@@ -9,7 +8,6 @@ import {
     getServerCountersKey,
     getGuildConfigKey,
     getWelcomeConfigKey,
-    getLevelingKey,
 } from './keys.js';
 
 const TEMP_BACKED_TYPES = new Set([
@@ -59,15 +57,6 @@ export function parseKey(key) {
         }
         if (parts[2] === 'welcome') {
             return { type: 'welcome_config', guildId, fullKey };
-        }
-        if (parts[2] === 'leveling') {
-            if (parts[3] === 'config') {
-                return { type: 'leveling_config', guildId, fullKey };
-            }
-            if (parts[3] === 'users' && parts[4]) {
-                return { type: 'user_level', guildId, userId: parts[4], fullKey };
-            }
-            return { type: 'leveling_data', guildId, fullKey };
         }
         if (parts[2] === 'economy' && parts[3]) {
             return { type: 'economy', guildId, userId: parts[3], fullKey };
@@ -163,14 +152,6 @@ export function getStructuredListPlan(prefix, tables) {
         });
     };
 
-    const addUserLevels = (guildId) => {
-        plan.queries.push({
-            sql: `SELECT user_id FROM ${tables.user_levels} WHERE guild_id = $1`,
-            params: [guildId],
-            mapKey: (row) => `guild:${guildId}:leveling:users:${row.user_id}`,
-        });
-    };
-
     const addTickets = (guildId) => {
         plan.queries.push({
             sql: `SELECT channel_id FROM ${tables.tickets} WHERE guild_id = $1`,
@@ -184,7 +165,6 @@ export function getStructuredListPlan(prefix, tables) {
         plan.staticKeys.push(
             getGuildConfigKey(guildId),
             getWelcomeConfigKey(guildId),
-            getLevelingKey(guildId),
             getServerCountersKey(guildId),
             `guild:${guildId}:applications:roles`,
             `guild:${guildId}:applications:settings`,
@@ -194,7 +174,6 @@ export function getStructuredListPlan(prefix, tables) {
             `guild:${guildId}:usernotes:list`,
         );
         addEconomy(guildId);
-        addUserLevels(guildId);
         addTickets(guildId);
     };
 
@@ -207,18 +186,6 @@ export function getStructuredListPlan(prefix, tables) {
     match = normalizedPrefix.match(/^guild:([^:]+):economy:$/);
     if (match) {
         addEconomy(match[1]);
-        return plan;
-    }
-
-    match = normalizedPrefix.match(/^([^:]+):leveling:users:$/);
-    if (match && match[1] !== 'guild') {
-        addUserLevels(match[1]);
-        return plan;
-    }
-
-    match = normalizedPrefix.match(/^guild:([^:]+):leveling:users:$/);
-    if (match) {
-        addUserLevels(match[1]);
         return plan;
     }
 
@@ -269,8 +236,6 @@ export function getStructuredListPlan(prefix, tables) {
             `reaction_roles:${match[1]}:`,
             getEconomyPrefix(match[1]),
             `economy:${match[1]}:`,
-            getUserLevelPrefix(match[1]),
-            `${match[1]}:leveling:users:`,
         ];
         return plan;
     }
