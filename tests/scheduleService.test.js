@@ -11,6 +11,8 @@ import {
 } from '../src/services/scheduleService.js';
 import { advanceInterval, durationMilliseconds, formatDuration, inactivityDeadline } from '../src/utils/scheduleTime.js';
 import { isTempBackedType, parseKey } from '../src/utils/database/keyParser.js';
+import { InteractionHelper } from '../src/utils/interactionHelper.js';
+import { ResponseCoordinator } from '../src/utils/responseCoordinator.js';
 import scheduleCommand from '../src/commands/Moderation/schedule.js';
 import {
   buildScheduleDashboard,
@@ -332,4 +334,34 @@ test('schedule slash command exposes dashboard and both task creation workflows'
   const command = scheduleCommand.data.toJSON();
   assert.equal(command.name, 'schedule');
   assert.deepEqual(command.options.map((option) => option.name), ['dashboard', 'announcement', 'inactivity']);
+});
+
+test('schedule dashboard command defers and then sends its dashboard response', async () => {
+  const guildId = uniqueGuildId();
+  const guild = makeGuild(guildId);
+  const client = createClient(guild);
+  await addScheduleTask(client, guildId, punishmentValues());
+  let response = null;
+  const interaction = {
+    id: '12345678901234567',
+    user: { id: 'user-id' },
+    guildId,
+    guild,
+    memberPermissions: { has: () => true },
+    options: { getSubcommand: () => 'dashboard' },
+    deferReply: async () => { interaction.deferred = true; },
+    editReply: async (payload) => {
+      response = payload;
+      return payload;
+    },
+  };
+  InteractionHelper.patchInteractionResponses(interaction);
+  ResponseCoordinator.attach(interaction);
+
+  await scheduleCommand.execute(interaction, null, client);
+
+  assert.equal(interaction.deferred, true);
+  assert.equal(response.embeds[0].toJSON().title, 'Schedule Dashboard');
+  assert.match(response.embeds[0].toJSON().description, /Inactive members/);
+  assert.ok(Array.isArray(response.components));
 });

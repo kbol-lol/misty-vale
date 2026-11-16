@@ -175,9 +175,10 @@ export default {
 
       const subcommand = interaction.options.getSubcommand();
       if (subcommand === 'dashboard') {
-        await InteractionHelper.safeDefer(interaction, { flags: MessageFlags.Ephemeral });
+        const deferred = await InteractionHelper.safeDefer(interaction, { flags: MessageFlags.Ephemeral });
+        if (!deferred) return;
         const view = await buildScheduleDashboard(client, interaction.guildId);
-        return InteractionHelper.safeEditReply(interaction, { embeds: [view.embed], components: view.components });
+        return await interaction.editReply({ embeds: [view.embed], components: view.components });
       }
 
       await interaction.deferReply({ flags: MessageFlags.Ephemeral });
