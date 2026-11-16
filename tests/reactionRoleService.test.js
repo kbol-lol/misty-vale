@@ -143,6 +143,20 @@ test('reaction role dashboard exposes image management and renders image removal
   assert.equal(removal.panelData.imageUrl, null);
 });
 
+test('reaction-role panel displays the selected emoji next to its assigned role', () => {
+  const embed = buildReactionPanelEmbed({
+    title: 'Color Roles',
+    description: 'Choose a color.',
+    reactionRoles: [{
+      emojiKey: '❤️',
+      emojiDisplay: '❤️',
+      roleId: '42345678901234567',
+    }],
+  }).toJSON();
+
+  assert.match(embed.description, /❤️ — <@&42345678901234567>/);
+});
+
 test('emoji picker provides paginated server emojis and a manual Unicode option', () => {
   const emojis = Array.from({ length: 26 }, (_, index) => ({
     id: String(10000000000000000 + index),

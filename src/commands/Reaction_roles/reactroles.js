@@ -284,6 +284,8 @@ export function buildReactionPanelEmbed(panelData) {
         .setDescription(description)
         .setColor(getColor('info'))
         .setFooter({ text: 'React to get the role. Remove your reaction to remove the role. | Reaction Role Panel' });
+    // The shared embed sanitizer removes pictographs, but role emojis must remain visible here.
+    embed.data.description = description;
 
     if (panelData.imageName) {
         embed.setImage(`attachment://${panelData.imageName}`);
