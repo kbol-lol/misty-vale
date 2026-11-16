@@ -99,7 +99,6 @@ when those emojis are deleted from the server.
 
 ### Utility Tools
 - **Report System** - Report issues to staff
-- **Todo Lists** - Personal task management
 - **First Message** - Jump to channel's first message
 
 ### Welcome System
