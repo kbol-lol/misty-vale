@@ -14,9 +14,6 @@ export {
 
 export {
     getGuildConfigKey,
-    getGuildBirthdaysKey,
-    getBirthdayLeftBackupKey,
-    getBirthdayTrackingKey,
     getTicketKey,
     getTicketCounterKey,
     getInviteTrackingKey,
@@ -63,7 +60,6 @@ export {
 import { db, getFromDb, setInDb } from './database/wrapper.js';
 import {
     getGuildConfigKey,
-    getGuildBirthdaysKey,
     getLevelingKey,
     getUserLevelKey,
     getApplicationRolesKey,
@@ -149,69 +145,6 @@ export const getColor = (path, fallback = "#000000") => {
 
     return typeof current === "string" ? current : fallback;
 };
-
-export async function getGuildBirthdays(client, guildId) {
-    const key = getGuildBirthdaysKey(guildId);
-    try {
-        if (!client.db || typeof client.db.get !== "function") {
-            logger.error("Database client is not available for getGuildBirthdays.");
-            return {};
-        }
-
-        const rawData = await client.db.get(key, {});
-        return unwrapReplitData(rawData) || {};
-    } catch (error) {
-        logger.error(`Error retrieving birthdays for guild ${guildId}:`, error);
-        return {};
-    }
-}
-
-export async function setBirthday(client, guildId, userId, month, day) {
-    try {
-        if (!client.db || typeof client.db.set !== "function") {
-            logger.error("Database client is not available for setBirthday.");
-            return false;
-        }
-
-        const key = getGuildBirthdaysKey(guildId);
-        const birthdays = await getGuildBirthdays(client, guildId);
-        birthdays[userId] = { month, day };
-        await client.db.set(key, birthdays);
-        return true;
-    } catch (error) {
-        logger.error(`Error setting birthday for user ${userId} in guild ${guildId}:`, error);
-        return false;
-    }
-}
-
-export async function deleteBirthday(client, guildId, userId) {
-    try {
-        if (!client.db || typeof client.db.set !== "function") {
-            logger.error("Database client is not available for deleteBirthday.");
-            return false;
-        }
-
-        const key = getGuildBirthdaysKey(guildId);
-        const birthdays = await getGuildBirthdays(client, guildId);
-        if (birthdays[userId]) {
-            delete birthdays[userId];
-            await client.db.set(key, birthdays);
-        }
-        return true;
-    } catch (error) {
-        logger.error(`Error deleting birthday for user ${userId} in guild ${guildId}:`, error);
-        return false;
-    }
-}
-
-export function getMonthName(monthNum) {
-    const months = [
-        'January', 'February', 'March', 'April', 'May', 'June',
-        'July', 'August', 'September', 'October', 'November', 'December'
-    ];
-    const index = Math.max(0, Math.min(monthNum - 1, 11));
-    return monthNum >= 1 && monthNum <= 12 ? months[index] : 'Invalid Month';
-}
 
 function isPostgresSqlReady(dbWrapper) {
     return Boolean(

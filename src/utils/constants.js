@@ -24,7 +24,6 @@ export const DEFAULT_ECONOMY_DATA = {
 
 export const DEFAULT_GUILD_CONFIG = {
     enabledCommands: {},
-    birthdayChannelId: null,
     premiumRoleId: null,
     modRole: null,
     adminRole: null,

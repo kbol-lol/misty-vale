@@ -38,18 +38,6 @@ export const tableStatements = [
         FOREIGN KEY (user_id) REFERENCES ${t.users}(id) ON DELETE CASCADE
     )`,
 
-    `CREATE TABLE IF NOT EXISTS ${t.birthdays} (
-        guild_id VARCHAR(20),
-        user_id VARCHAR(20),
-        month INTEGER NOT NULL,
-        day INTEGER NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        PRIMARY KEY (guild_id, user_id),
-        FOREIGN KEY (guild_id) REFERENCES ${t.guilds}(id) ON DELETE CASCADE,
-        FOREIGN KEY (user_id) REFERENCES ${t.users}(id) ON DELETE CASCADE
-    )`,
-
     `CREATE TABLE IF NOT EXISTS ${t.giveaways} (
         id SERIAL PRIMARY KEY,
         guild_id VARCHAR(20),
@@ -178,8 +166,6 @@ export const tableStatements = [
 export const indexStatements = [
     `CREATE INDEX IF NOT EXISTS idx_guild_users_guild_id ON ${t.guild_users}(guild_id)`,
     `CREATE INDEX IF NOT EXISTS idx_guild_users_user_id ON ${t.guild_users}(user_id)`,
-    `CREATE INDEX IF NOT EXISTS idx_birthdays_guild_id ON ${t.birthdays}(guild_id)`,
-    `CREATE INDEX IF NOT EXISTS idx_birthdays_month_day ON ${t.birthdays}(month, day)`,
     `CREATE INDEX IF NOT EXISTS idx_giveaways_guild_id ON ${t.giveaways}(guild_id)`,
     `CREATE INDEX IF NOT EXISTS idx_giveaways_ends_at ON ${t.giveaways}(ends_at)`,
     `CREATE INDEX IF NOT EXISTS idx_tickets_guild_id ON ${t.tickets}(guild_id)`,
@@ -220,7 +206,6 @@ export const triggerDefinitions = [
     { name: 'update_application_roles_updated_at', table: t.application_roles },
     { name: 'update_invite_tracking_updated_at', table: t.invite_tracking },
     { name: 'update_guild_users_updated_at', table: t.guild_users },
-    { name: 'update_birthdays_updated_at', table: t.birthdays },
     { name: 'update_giveaways_updated_at', table: t.giveaways },
     { name: 'update_tickets_updated_at', table: t.tickets },
     { name: 'update_afk_status_updated_at', table: t.afk_status },

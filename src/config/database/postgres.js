@@ -5,7 +5,6 @@ const configuredTables = {
     guilds: 'guilds',
     users: 'users',
     guild_users: 'guild_users',
-    birthdays: 'birthdays',
     giveaways: 'giveaways',
     tickets: 'ticket_data',
     afk_status: 'afk_status',
@@ -24,7 +23,6 @@ const allowedTableIdentifiers = new Set([
     'guilds',
     'users',
     'guild_users',
-    'birthdays',
     'giveaways',
     'ticket_data',
     'afk_status',
@@ -152,7 +150,6 @@ export const pgConfig = {
         
         welcome: null,
         
-        birthday: null,
     },
     
     features: {

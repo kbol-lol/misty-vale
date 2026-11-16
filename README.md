@@ -95,11 +95,6 @@ limits should be enforced.
 - **Auto Picking** - Automatic winner selection
 - **Reroll System** - Pick new winners if needed
 
-### Birthday System
-- **Birthday Tracking** - Never miss a birthday
-- **Auto Announcements** - Celebrate automatically
-- **Timezone Support** - Accurate worldwide tracking
-
 ### Utility Tools
 - **Report System** - Report issues to staff
 - **Todo Lists** - Personal task management

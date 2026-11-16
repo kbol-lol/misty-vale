@@ -18,7 +18,6 @@ export default {
             `• 📊 Levels and XP\n` +
             `• 🎒 Inventory items\n` +
             `• 🛍️ Shop purchases\n` +
-            `• 🎂 Birthday information\n` +
             `• 🔢 Counter data\n` +
             `• 📋 All other personal data\n\n` +
             `**This cannot be undone. Are you absolutely sure?**`;

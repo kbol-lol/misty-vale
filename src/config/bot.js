@@ -127,7 +127,6 @@ export const botConfig = {
         pending: "#99AAB5",
       },
       economy: "#F1C40F",
-      birthday: "#E91E63",
       moderation: "#9B59B6",
 
       // Ticket priority color mapping.
@@ -281,20 +280,6 @@ export const botConfig = {
 
     // Role IDs that bypass giveaway restrictions.
     bypassRoles: [],
-  },
-
-  // =========================
-  // BIRTHDAY SETTINGS
-  // =========================
-  birthday: {
-    // Role ID given to users on their birthday.
-    defaultRole: null,
-
-    // Channel ID where birthday announcements are posted.
-    announcementChannel: null,
-
-    // Timezone used to calculate birthday dates.
-    timezone: "UTC",
   },
 
   // =========================
@@ -458,7 +443,6 @@ export const botConfig = {
     // Community engagement systems.
     tickets: true,
     giveaways: true,
-    birthday: true,
     counter: true,
 
     // Security and self-service systems.
@@ -530,7 +514,6 @@ if (configErrors.length > 0) {
 export const BotConfig = botConfig;
 
 const COMMAND_CATEGORY_FEATURE_MAP = {
-  birthday: "birthday",
   community: "community",
   economy: "economy",
   fun: "fun",

@@ -129,18 +129,10 @@ export async function getVerificationPanelStatus(client, guild, config) {
 }
 
 export async function getReactionRolePanelStatus(client, guild, panelData) {
-    if (panelData?.mode === 'reaction') {
-        return getBotPanelStatus(client, guild, {
-            channelId: panelData?.channelId,
-            messageId: panelData?.messageId,
-            footerMarker: 'Reaction Role Panel',
-        });
-    }
-
     return getBotPanelStatus(client, guild, {
         channelId: panelData?.channelId,
         messageId: panelData?.messageId,
-        selectCustomId: 'reaction_roles',
+        footerMarker: 'Reaction Role Panel',
     });
 }
 

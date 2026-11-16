@@ -622,17 +622,6 @@ class PostgreSQLDatabase {
                     );
                     return guildResult.rows.length > 0 ? guildResult.rows[0].config : defaultValue;
                 
-                case 'guild_birthdays':
-                    const birthdayResult = await this.pool.query(
-                        `SELECT user_id, month, day FROM ${pgConfig.tables.birthdays} WHERE guild_id = $1`,
-                        [parsedKey.guildId]
-                    );
-                    const birthdays = {};
-                    birthdayResult.rows.forEach(row => {
-                        birthdays[row.user_id] = { month: row.month, day: row.day };
-                    });
-                    return birthdays;
-                
                 case 'guild_giveaways':
                     const giveawayResult = await this.pool.query(
                         `SELECT data FROM ${pgConfig.tables.giveaways} WHERE guild_id = $1`,
@@ -732,32 +721,6 @@ class PostgreSQLDatabase {
                          ON CONFLICT (id) DO UPDATE SET config = $2, updated_at = CURRENT_TIMESTAMP`,
                         [parsedKey.guildId, value]
                     );
-                    return true;
-                
-                case 'guild_birthdays':
-                    await this.pool.query(
-                        `INSERT INTO ${pgConfig.tables.guilds} (id, created_at) 
-                         VALUES ($1, CURRENT_TIMESTAMP) 
-                         ON CONFLICT (id) DO NOTHING`,
-                        [parsedKey.guildId]
-                    );
-                    
-                    await this.pool.query(`DELETE FROM ${pgConfig.tables.birthdays} WHERE guild_id = $1`, [parsedKey.guildId]);
-                    
-                    for (const [userId, birthday] of Object.entries(value)) {
-                        await this.pool.query(
-                            `INSERT INTO ${pgConfig.tables.users} (id, created_at) 
-                             VALUES ($1, CURRENT_TIMESTAMP) 
-                             ON CONFLICT (id) DO NOTHING`,
-                            [userId]
-                        );
-                        
-                        await this.pool.query(
-                            `INSERT INTO ${pgConfig.tables.birthdays} (guild_id, user_id, month, day) 
-                             VALUES ($1, $2, $3, $4)`,
-                            [parsedKey.guildId, userId, birthday.month, birthday.day]
-                        );
-                    }
                     return true;
                 
                 case 'guild_giveaways':
@@ -970,10 +933,6 @@ class PostgreSQLDatabase {
             switch (parsedKey.type) {
                 case 'guild_config':
                     await this.pool.query(`DELETE FROM ${pgConfig.tables.guilds} WHERE id = $1`, [parsedKey.guildId]);
-                    return true;
-                
-                case 'guild_birthdays':
-                    await this.pool.query(`DELETE FROM ${pgConfig.tables.birthdays} WHERE guild_id = $1`, [parsedKey.guildId]);
                     return true;
                 
                 case 'guild_giveaways':

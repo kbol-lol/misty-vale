@@ -38,7 +38,6 @@ const wipedataConfirmHandler = {
         `shop:${guildId}:${userId}`,
         `shop_data:${guildId}:${userId}`,
         `counter:${guildId}:${userId}`,
-        `birthday:${guildId}:${userId}`,
         `balance:${guildId}:${userId}`,
         `user:${guildId}:${userId}`,
         `leveling:${guildId}:${userId}`,

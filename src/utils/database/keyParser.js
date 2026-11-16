@@ -8,7 +8,6 @@ import {
     getTicketCounterKey,
     getServerCountersKey,
     getGuildConfigKey,
-    getGuildBirthdaysKey,
     getWelcomeConfigKey,
     getLevelingKey,
 } from './keys.js';
@@ -24,8 +23,6 @@ const TEMP_BACKED_TYPES = new Set([
     'application_users',
     'jointocreate_config',
     'jointocreate_channels',
-    'birthday_left',
-    'birthday_tracking',
     'invite_data',
     'giveaway_entry',
     'giveaway_lock',
@@ -56,15 +53,6 @@ export function parseKey(key) {
 
         if (parts[2] === 'config') {
             return { type: 'guild_config', guildId, fullKey };
-        }
-        if (parts[2] === 'birthdays') {
-            if (parts[3] === 'left') {
-                return { type: 'birthday_left', guildId, fullKey };
-            }
-            if (parts[3] === 'tracking') {
-                return { type: 'birthday_tracking', guildId, fullKey };
-            }
-            return { type: 'guild_birthdays', guildId, fullKey };
         }
         if (parts[2] === 'giveaways') {
             return { type: 'guild_giveaways', guildId, fullKey };
@@ -195,7 +183,6 @@ export function getStructuredListPlan(prefix, tables) {
     const addGuildScopedSingletons = (guildId) => {
         plan.staticKeys.push(
             getGuildConfigKey(guildId),
-            getGuildBirthdaysKey(guildId),
             getWelcomeConfigKey(guildId),
             getLevelingKey(guildId),
             getServerCountersKey(guildId),
@@ -205,8 +192,6 @@ export function getStructuredListPlan(prefix, tables) {
             `guild:${guildId}:jointocreate:channels`,
             `guild:${guildId}:invites`,
             `guild:${guildId}:usernotes:list`,
-            `guild:${guildId}:birthdays:left`,
-            `guild:${guildId}:birthdays:tracking`,
         );
         addEconomy(guildId);
         addUserLevels(guildId);

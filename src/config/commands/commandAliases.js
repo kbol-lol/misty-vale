@@ -52,10 +52,6 @@ export const commandAliases = {
     'pfp': 'avatar',
     'icon': 'avatar',
 
-    'bd': 'birthday',
-    'bday': 'birthday',
-    'b': 'birthday',
-
     'flip': 'flip',
     'coin': 'flip',
     'roll': 'roll',
