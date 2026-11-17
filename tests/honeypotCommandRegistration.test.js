@@ -2,46 +2,62 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { registerCommands } from '../src/handlers/loaders/commandLoader.js';
 
-function createClient(registeredGuildCommands = []) {
+function createClient({ guilds, botId = 'application-id' } = {}) {
     const calls = [];
-    const commandData = {
-        name: 'honeypot',
-        description: 'Configure the server honeypot',
-        options: [{ type: 1, name: 'dashboard', description: 'Open the settings dashboard' }],
-    };
+    const makeCommand = name => ({
+        category: 'Fun',
+        data: {
+            name,
+            toJSON: () => ({ name, description: `${name} command` }),
+        },
+    });
     const client = {
-        commands: new Map([['honeypot', {
-            category: 'Moderation',
-            data: { name: 'honeypot', toJSON: () => commandData },
-        }]]),
-        guilds: { cache: { values: () => [{ id: 'target-guild-id', name: 'Target Guild' }] } },
+        user: { id: botId },
+        commands: new Map([
+            ['rps', makeCommand('rps')],
+            ['rps-copy', makeCommand('rps')],
+            ['connectfour', makeCommand('connectfour')],
+        ]),
+        guilds: {
+            cache: {
+                values: () => guilds || [
+                    { id: 'guild-one', name: 'Guild One' },
+                    { id: 'guild-two', name: 'Guild Two' },
+                ],
+            },
+        },
         rest: {
             put: async (route, options) => calls.push({ method: 'put', route, options }),
-            get: async route => {
-                calls.push({ method: 'get', route });
-                return registeredGuildCommands;
-            },
-            delete: async route => calls.push({ method: 'delete', route }),
         },
     };
     return { client, calls };
 }
 
-test('registers honeypot globally and removes a duplicate guild-scoped command', async () => {
-    const { client, calls } = createClient([
-        { id: 'existing-honeypot-id', name: 'honeypot', type: 1 },
-        { id: 'existing-moderation-id', name: 'moderation', type: 1 },
-    ]);
+test('registers each command globally once and clears guild-scoped copies in every guild', async () => {
+    const { client, calls } = createClient();
+    await registerCommands(client, { clientId: 'application-id' });
 
-    await registerCommands(client, {
-        clientId: 'application-id',
-    });
-
-    assert.ok(calls.some(call => call.method === 'put' && call.route === '/applications/application-id/commands'));
-    assert.ok(calls.some(call =>
-        call.method === 'delete'
-        && call.route === '/applications/application-id/guilds/target-guild-id/commands/existing-honeypot-id',
+    const globalRegistration = calls.find(call => call.route === '/applications/application-id/commands');
+    assert.ok(globalRegistration);
+    assert.deepEqual(globalRegistration.options.body.map(command => command.name), ['rps', 'connectfour']);
+    assert.deepEqual(
+        calls.filter(call => call.route.includes('/guilds/')).map(call => call.route),
+        [
+            '/applications/application-id/guilds/guild-one/commands',
+            '/applications/application-id/guilds/guild-two/commands',
+        ],
+    );
+    assert.ok(calls.filter(call => call.route.includes('/guilds/')).every(call =>
+        call.options.body.length === 0,
     ));
-    assert.equal(calls.some(call => call.method === 'delete' && call.route.endsWith('existing-moderation-id')), false);
-    assert.equal(calls.some(call => call.method === 'post'), false);
+});
+
+test('does not register commands against a different application ID', async () => {
+    const { client, calls } = createClient({ botId: 'different-application-id' });
+
+    await assert.rejects(
+        registerCommands(client, { clientId: 'application-id' }),
+        /does not match the logged-in bot application/,
+    );
+    assert.equal(calls.length, 0);
 });

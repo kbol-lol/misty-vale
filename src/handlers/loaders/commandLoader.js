@@ -247,6 +247,12 @@ async function registerGlobalCommands(client, clientId, commands, totalSubcomman
         throw new Error('CLIENT_ID is required for slash command registration');
     }
 
+    if (client.user?.id && client.user.id !== clientId) {
+        throw new Error(
+            `CLIENT_ID (${clientId}) does not match the logged-in bot application (${client.user.id})`,
+        );
+    }
+
     if (!client.rest) {
         throw new Error('Discord REST client is not available for slash command registration');
     }
@@ -275,32 +281,23 @@ export async function registerCommands(client, options = {}) {
     try {
         const { commands, totalSubcommands } = collectCommandPayloads(client);
         await registerGlobalCommands(client, clientId, commands, totalSubcommands);
-        await deregisterGuildScopedCommand(client, clientId, 'rps');
-        await deregisterGuildScopedCommand(client, clientId, 'honeypot');
+        await clearGuildScopedCommands(client, clientId);
     } catch (error) {
         logger.error('Error registering commands:', error);
         throw error;
     }
 }
 
-async function deregisterGuildScopedCommand(client, clientId, commandName) {
+async function clearGuildScopedCommands(client, clientId) {
     const guilds = [...(client.guilds?.cache?.values?.() || [])];
     for (const guild of guilds) {
         const endpoint = `/applications/${clientId}/guilds/${guild.id}/commands`;
         try {
-            const registeredCommands = await client.rest.get(endpoint);
-            const existingCommands = registeredCommands.filter(
-                (registered) => registered.name === commandName
-                    && (registered.type ?? 1) === 1,
-            );
-            for (const existing of existingCommands) {
-                await client.rest.delete(`${endpoint}/${existing.id}`);
-            }
-            if (existingCommands.length) {
-                logger.info(`Removed guild-scoped /${commandName} command from ${guild.name} (${guild.id})`);
-            }
+            await client.rest.put(endpoint, { body: [] });
+            logger.info(`Cleared guild-scoped commands for ${guild.name} (${guild.id}); commands use global registration`);
         } catch (error) {
-            logger.error(`Failed to remove guild-scoped /${commandName} command from ${guild.name} (${guild.id}):`, error);
+            logger.error(`Failed to clear guild-scoped commands for ${guild.name} (${guild.id}):`, error);
+            throw error;
         }
     }
 }

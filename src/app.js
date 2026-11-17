@@ -330,13 +330,9 @@ class KbolsBot extends Client {
   }
 
   async registerCommands() {
-    try {
-      await registerSlashCommands(this, {
-        clientId: this.config.bot.clientId,
-      });
-    } catch (error) {
-      logger.error('Error registering commands:', error);
-    }
+    await registerSlashCommands(this, {
+      clientId: this.config.bot.clientId,
+    });
   }
 
   async shutdown(reason = 'UNKNOWN') {
