@@ -39,6 +39,7 @@ Kbols Bot offers tools for Discord server management and community engagement:
 - **Wanted Poster** - Create fun wanted images
 - **Text Reversal** - Reverse any text
 - **Rock-Paper-Scissors** - Play 1-20 rounds, offer a draw, or give up
+- **Connect Four** - Play 1-20 rounds with yellow and red discs, draw offers, and forfeits
 
 ### Advanced Ticket System
 - **Claim & Priority** - Staff ticket management

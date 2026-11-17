@@ -4,6 +4,7 @@ const COLLECTOR_MANAGED_PREFIXES = [
   'config_wizard',
   'cmdaccess_',
   'rps',
+  'connectfour',
 ];
 
 export function isCollectorManagedComponent(customId = '') {
