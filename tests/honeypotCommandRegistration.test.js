@@ -52,6 +52,16 @@ test('registers each command globally once and clears guild-scoped copies in eve
     ));
 });
 
+test('clears stale guild-scoped commands for the configured guild even when it is not cached', async () => {
+    const { client, calls } = createClient({ guilds: [] });
+    await registerCommands(client, { clientId: 'application-id', guildId: 'main-guild' });
+
+    assert.ok(calls.some(call =>
+        call.route === '/applications/application-id/guilds/main-guild/commands'
+            && call.options.body.length === 0,
+    ));
+});
+
 test('does not register commands against a different application ID', async () => {
     const { client, calls } = createClient({ botId: 'different-application-id' });
 

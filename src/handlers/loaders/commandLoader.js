@@ -276,20 +276,27 @@ async function registerGlobalCommands(client, clientId, commands, totalSubcomman
 }
 
 export async function registerCommands(client, options = {}) {
-    const { clientId = null } = options;
+    const { clientId = null, guildId = null } = options;
 
     try {
         const { commands, totalSubcommands } = collectCommandPayloads(client);
         await registerGlobalCommands(client, clientId, commands, totalSubcommands);
-        await clearGuildScopedCommands(client, clientId);
+        await clearGuildScopedCommands(client, clientId, guildId);
     } catch (error) {
         logger.error('Error registering commands:', error);
         throw error;
     }
 }
 
-async function clearGuildScopedCommands(client, clientId) {
-    const guilds = [...(client.guilds?.cache?.values?.() || [])];
+async function clearGuildScopedCommands(client, clientId, configuredGuildId) {
+    const guildsById = new Map(
+        [...(client.guilds?.cache?.values?.() || [])].map(guild => [guild.id, guild]),
+    );
+    if (configuredGuildId && !guildsById.has(configuredGuildId)) {
+        guildsById.set(configuredGuildId, { id: configuredGuildId, name: 'configured guild' });
+    }
+
+    const guilds = [...guildsById.values()];
     for (const guild of guilds) {
         const endpoint = `/applications/${clientId}/guilds/${guild.id}/commands`;
         try {

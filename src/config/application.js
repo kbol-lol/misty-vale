@@ -22,7 +22,7 @@ const appConfig = {
     ...botConfig,
     token: process.env.DISCORD_TOKEN || process.env.TOKEN,
     clientId: process.env.CLIENT_ID,
-    // Retained for tutorial/setup compatibility; not used for command registration.
+    // Used to clear stale guild-scoped commands even if this guild is not in the cache.
     guildId: process.env.GUILD_ID,
 
     shop: {

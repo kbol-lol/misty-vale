@@ -332,6 +332,7 @@ class KbolsBot extends Client {
   async registerCommands() {
     await registerSlashCommands(this, {
       clientId: this.config.bot.clientId,
+      guildId: this.config.bot.guildId,
     });
   }
 

@@ -236,6 +236,7 @@ Slash commands are registered **globally** on startup (via `CLIENT_ID`), so the 
 
 Notes:
 - Global slash commands may take up to about an hour to propagate on first deploy
+- Set `GUILD_ID` to your primary server; startup also clears stale server-specific command overrides there, even if that server is not in the bot's cached guild list
 - Each server has **isolated** data: config, economy, tickets, dashboards, warnings, etc. (all keys are scoped as `guild:{guildId}:...`)
 - In the [Discord Developer Portal](https://discord.com/developers/applications), ensure your bot is not restricted to a single guild if you plan to invite it elsewhere
 - Generate an OAuth2 invite URL from the [Discord Developer Portal](https://discord.com/developers/applications) (OAuth2 → URL Generator, scopes: `bot` and `applications.commands`)
