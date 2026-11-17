@@ -9,7 +9,13 @@ import {
 import { rpsConfig } from '../../config/rps.js';
 import { InteractionHelper } from '../../utils/interactionHelper.js';
 import { logger } from '../../utils/logger.js';
-import { resolveRpsRound, RPS_MOVES } from '../../utils/rpsGame.js';
+import {
+  offerRpsDraw,
+  respondToRpsDraw,
+  resolveRpsRound,
+  RPS_MOVES,
+  surrenderRpsGame,
+} from '../../utils/rpsGame.js';
 
 export default {
   data: new SlashCommandBuilder()
@@ -52,6 +58,7 @@ export default {
       scores: new Map([[interaction.user.id, 0]]),
       choices: new Map(),
       roundResults: [],
+      drawOfferId: null,
       finished: false,
       interactionQueue: Promise.resolve(),
       message: null,
@@ -124,7 +131,6 @@ async function handleGameInteraction(interaction, game, collector) {
     return;
   }
 
-  if (!interaction.customId.startsWith('rps:move:')) return;
   if (!game.opponentId) {
     await ephemeralReply(interaction, rpsConfig.text.unavailableError);
     return;
@@ -134,8 +140,92 @@ async function handleGameInteraction(interaction, game, collector) {
     return;
   }
 
+  if (game.finished) {
+    await ephemeralReply(interaction, rpsConfig.text.unavailableError);
+    return;
+  }
+
+  if (interaction.customId === 'rps:surrender') {
+    const result = surrenderRpsGame(game, interaction.user.id);
+    if (result.status !== 'surrendered') {
+      await ephemeralReply(interaction, rpsConfig.text.unavailableError);
+      return;
+    }
+
+    await interaction.deferUpdate();
+    collector.stop('surrendered');
+    await game.message.edit({
+      embeds: [makeEmbed(rpsConfig.text.inviteTitle, format(rpsConfig.text.surrendered, {
+        loser: mentionUser(result.loserId),
+        winner: mentionUser(result.winnerId),
+        score1: game.scores.get(result.winnerId) || 0,
+        score2: game.scores.get(result.loserId) || 0,
+      }))],
+      components: disableRows(game.message.components),
+    });
+    return;
+  }
+
+  if (interaction.customId === 'rps:offer-draw') {
+    const result = offerRpsDraw(game, interaction.user.id);
+    if (result.status !== 'offered') {
+      await ephemeralReply(
+        interaction,
+        result.status === 'pending' ? rpsConfig.text.drawOfferPending : rpsConfig.text.unavailableError,
+      );
+      return;
+    }
+
+    await interaction.deferUpdate();
+    await game.message.edit({
+      embeds: [makeMoveEmbed(game, format(rpsConfig.text.drawOffer, {
+        player: mentionUser(interaction.user.id),
+        opponent: mentionUser(interaction.user.id === game.creatorId ? game.opponentId : game.creatorId),
+      }))],
+      components: makeMoveRows(game),
+    });
+    return;
+  }
+
+  if (interaction.customId === 'rps:accept-draw' || interaction.customId === 'rps:decline-draw') {
+    const accepted = interaction.customId === 'rps:accept-draw';
+    const result = respondToRpsDraw(game, interaction.user.id, accepted);
+    if (result.status !== 'accepted' && result.status !== 'declined') {
+      const errorText = result.status === 'own_offer'
+        ? rpsConfig.text.drawOfferOwn
+        : result.status === 'missing'
+          ? rpsConfig.text.drawOfferMissing
+          : rpsConfig.text.unavailableError;
+      await ephemeralReply(interaction, errorText);
+      return;
+    }
+
+    await interaction.deferUpdate();
+    if (accepted) {
+      collector.stop('draw-agreed');
+      await game.message.edit({
+        embeds: [makeEmbed(rpsConfig.text.inviteTitle, format(rpsConfig.text.drawAccepted, {
+          score1: game.scores.get(game.creatorId) || 0,
+          score2: game.scores.get(game.opponentId) || 0,
+        }))],
+        components: disableRows(game.message.components),
+      });
+      return;
+    }
+
+    await game.message.edit({
+      embeds: [makeMoveEmbed(game, `${format(rpsConfig.text.drawDeclined, {
+        opponent: mentionUser(interaction.user.id),
+      })}\n\n${game.choices.size ? makeWaitingText(game) : makeMoveDescription(game)}`)],
+      components: makeMoveRows(game),
+    });
+    return;
+  }
+
+  if (!interaction.customId.startsWith('rps:move:')) return;
+
   const move = interaction.customId.slice('rps:move:'.length);
-  if (!RPS_MOVES.includes(move) || game.finished) {
+  if (!RPS_MOVES.includes(move) || game.drawOfferId) {
     await ephemeralReply(interaction, rpsConfig.text.unavailableError);
     return;
   }
@@ -244,14 +334,40 @@ function makeWaitingText(game) {
 }
 
 function makeMoveRows(game) {
+  const allMovesLocked = game.choices.has(game.creatorId) && game.choices.has(game.opponentId);
   const row = new ActionRowBuilder().addComponents(
     ...RPS_MOVES.map((move) => new ButtonBuilder()
       .setCustomId(`rps:move:${move}`)
       .setStyle(ButtonStyle.Secondary)
       .setEmoji(parseButtonEmoji(rpsConfig.emojis[move]))
-      .setDisabled(game.choices.has(game.creatorId) && game.choices.has(game.opponentId))),
+      .setDisabled(Boolean(game.drawOfferId) || allMovesLocked)),
   );
-  return [row];
+  const actionRow = game.drawOfferId
+    ? new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId('rps:surrender')
+        .setStyle(ButtonStyle.Danger)
+        .setLabel(rpsConfig.text.surrenderButton),
+      new ButtonBuilder()
+        .setCustomId('rps:accept-draw')
+        .setStyle(ButtonStyle.Success)
+        .setLabel(rpsConfig.text.acceptDrawButton),
+      new ButtonBuilder()
+        .setCustomId('rps:decline-draw')
+        .setStyle(ButtonStyle.Secondary)
+        .setLabel(rpsConfig.text.declineDrawButton),
+    )
+    : new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId('rps:surrender')
+        .setStyle(ButtonStyle.Danger)
+        .setLabel(rpsConfig.text.surrenderButton),
+      new ButtonBuilder()
+        .setCustomId('rps:offer-draw')
+        .setStyle(ButtonStyle.Secondary)
+        .setLabel(rpsConfig.text.offerDrawButton),
+    );
+  return [row, actionRow];
 }
 
 function makeEmbed(title, description) {

@@ -5,7 +5,7 @@
  */
 export const rpsConfig = {
   defaultRounds: 1,
-  maximumRounds: 5,
+  maximumRounds: 20,
   gameTimeoutMs: 15 * 60 * 1000,
   embedColor: '#D8D9FF',
   emojis: {
@@ -18,6 +18,10 @@ export const rpsConfig = {
     inviteTitle: 'Rock-Paper-Scissors',
     inviteDescription: 'Click the button below to play {rounds} round(s) of Rock-Paper-Scissors with {player}.',
     joinButton: 'Join game',
+    surrenderButton: 'Give up',
+    offerDrawButton: 'Offer draw',
+    acceptDrawButton: 'Accept draw',
+    declineDrawButton: 'Decline draw',
     chooseTitle: 'Any of you can go first',
     chooseDescription: 'Click a button to lock in your move for round {round} of {rounds}.\n\nScore: {player} **{score1}** — **{score2}** {opponent}',
     waitingDescription: 'Waiting for the other player to lock in round {round}…',
@@ -28,6 +32,13 @@ export const rpsConfig = {
     finalChoices: '{player} chose {move1}\n{opponent} chose {move2}',
     expired: 'This Rock-Paper-Scissors game expired before it was completed.',
     accepted: '{opponent} joined the game. Choose your moves below.',
+    drawOffer: '{player} offers a draw. {opponent}, accept or decline the offer.',
+    drawAccepted: 'The draw offer was accepted. The match ends in a draw at **{score1}–{score2}**.',
+    drawDeclined: '{opponent} declined the draw offer.',
+    drawOfferPending: 'A draw offer is already waiting for a response.',
+    drawOfferMissing: 'There is no draw offer to respond to.',
+    drawOfferOwn: 'You cannot accept or decline your own draw offer.',
+    surrendered: '{loser} gave up. {winner} wins the match **{score1}–{score2}**.',
     alreadyLocked: 'Your move for this round is already locked in.',
     selfJoinError: 'You cannot play Rock-Paper-Scissors against yourself.',
     unavailableError: 'This game is no longer accepting players.',

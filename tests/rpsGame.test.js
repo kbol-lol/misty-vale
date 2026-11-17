@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import rpsCommand from '../src/commands/Fun/rps.js';
-import { resolveRpsRound } from '../src/utils/rpsGame.js';
+import {
+  offerRpsDraw,
+  respondToRpsDraw,
+  resolveRpsRound,
+  surrenderRpsGame,
+} from '../src/utils/rpsGame.js';
 import { isCollectorManagedComponent } from '../src/utils/collectorComponents.js';
 
 function makeGame(rounds) {
@@ -17,7 +22,16 @@ function makeGame(rounds) {
 }
 
 test('RPS button interactions are left to their message collector', () => {
-  for (const customId of ['rps:join', 'rps:move:rock', 'rps:move:paper', 'rps:move:scissors']) {
+  for (const customId of [
+    'rps:join',
+    'rps:move:rock',
+    'rps:move:paper',
+    'rps:move:scissors',
+    'rps:surrender',
+    'rps:offer-draw',
+    'rps:accept-draw',
+    'rps:decline-draw',
+  ]) {
     assert.equal(isCollectorManagedComponent(customId.split(':')[0]), true, customId);
   }
 });
@@ -100,8 +114,8 @@ test('disabled ties use a sudden-death round when the match score is tied', () =
   assert.equal(game.finished, true);
 });
 
-test('round counts from one through five finish on the requested round', () => {
-  for (let rounds = 1; rounds <= 5; rounds += 1) {
+test('round counts from one through twenty finish on the requested round', () => {
+  for (let rounds = 1; rounds <= 20; rounds += 1) {
     const game = makeGame(rounds);
 
     for (let round = 1; round <= rounds; round += 1) {
@@ -121,6 +135,43 @@ test('round counts from one through five finish on the requested round', () => {
 
     assert.equal(game.round, rounds);
   }
+});
+
+test('RPS command accepts up to twenty rounds', () => {
+  const roundsOption = rpsCommand.data.toJSON().options.find(({ name }) => name === 'rounds');
+  assert.equal(roundsOption.max_value, 20);
+});
+
+test('players can offer and accept a draw, ending the match', () => {
+  const game = makeGame(5);
+
+  assert.deepEqual(offerRpsDraw(game, game.creatorId), { status: 'offered' });
+  assert.deepEqual(offerRpsDraw(game, game.opponentId), { status: 'pending' });
+  assert.deepEqual(respondToRpsDraw(game, game.creatorId, true), { status: 'own_offer' });
+  assert.deepEqual(respondToRpsDraw(game, game.opponentId, true), { status: 'accepted' });
+  assert.equal(game.finished, true);
+});
+
+test('declining a draw resumes the match and either player can surrender', () => {
+  const game = makeGame(5);
+
+  assert.deepEqual(offerRpsDraw(game, game.creatorId), { status: 'offered' });
+  assert.deepEqual(respondToRpsDraw(game, game.opponentId, false), { status: 'declined' });
+  assert.equal(game.drawOfferId, null);
+  assert.equal(game.finished, false);
+  assert.deepEqual(surrenderRpsGame(game, game.opponentId), {
+    status: 'surrendered',
+    loserId: game.opponentId,
+    winnerId: game.creatorId,
+  });
+  assert.equal(game.finished, true);
+});
+
+test('non-players cannot offer draws, accept them, or surrender', () => {
+  const game = makeGame(2);
+  assert.deepEqual(offerRpsDraw(game, 'spectator'), { status: 'not_player' });
+  assert.deepEqual(respondToRpsDraw(game, 'spectator', true), { status: 'missing' });
+  assert.deepEqual(surrenderRpsGame(game, 'spectator'), { status: 'not_player' });
 });
 
 test('a winning move awards a point to the round winner', () => {

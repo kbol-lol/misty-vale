@@ -2,6 +2,42 @@ export const RPS_MOVES = ['rock', 'paper', 'scissors'];
 
 const MOVE_BEATS = { rock: 'scissors', paper: 'rock', scissors: 'paper' };
 
+export function offerRpsDraw(game, playerId) {
+  if (game.finished) return { status: 'finished' };
+  if (playerId !== game.creatorId && playerId !== game.opponentId) return { status: 'not_player' };
+  if (game.drawOfferId) return { status: 'pending' };
+
+  game.drawOfferId = playerId;
+  return { status: 'offered' };
+}
+
+export function respondToRpsDraw(game, playerId, accept) {
+  if (game.finished) return { status: 'finished' };
+  if (!game.drawOfferId) return { status: 'missing' };
+  if (playerId !== game.creatorId && playerId !== game.opponentId) return { status: 'not_player' };
+  if (playerId === game.drawOfferId) return { status: 'own_offer' };
+
+  if (accept) {
+    game.finished = true;
+    return { status: 'accepted' };
+  }
+
+  game.drawOfferId = null;
+  return { status: 'declined' };
+}
+
+export function surrenderRpsGame(game, playerId) {
+  if (game.finished) return { status: 'finished' };
+  if (playerId !== game.creatorId && playerId !== game.opponentId) return { status: 'not_player' };
+
+  game.finished = true;
+  return {
+    status: 'surrendered',
+    loserId: playerId,
+    winnerId: playerId === game.creatorId ? game.opponentId : game.creatorId,
+  };
+}
+
 export function resolveRpsRound(game, { allowTies = true } = {}) {
   const firstMove = game.choices.get(game.creatorId);
   const secondMove = game.choices.get(game.opponentId);
