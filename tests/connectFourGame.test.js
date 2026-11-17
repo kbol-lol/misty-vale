@@ -7,25 +7,18 @@ import {
   createConnectFourBoard,
   dropConnectFourDisc,
   hasConnectFourWin,
-  offerConnectFourDraw,
-  resolveConnectFourRound,
-  respondToConnectFourDraw,
+  resolveConnectFourGame,
   surrenderConnectFourGame,
 } from '../src/utils/connectFourGame.js';
 import { isCollectorManagedComponent } from '../src/utils/collectorComponents.js';
 
-function makeGame(rounds = 1, allowTies = true) {
+function makeGame() {
   return {
     creatorId: 'player-yellow',
     opponentId: 'player-red',
-    rounds,
-    allowTies,
-    round: 1,
-    scores: new Map([['player-yellow', 0], ['player-red', 0]]),
     board: createConnectFourBoard(),
     startingPlayerId: 'player-yellow',
     currentPlayerId: 'player-yellow',
-    drawOfferId: null,
     finished: false,
   };
 }
@@ -36,20 +29,16 @@ function playColumns(game, columns) {
     finalMove = dropConnectFourDisc(game, game.currentPlayerId, column);
     assert.equal(finalMove.status, 'dropped');
     if (finalMove.winnerId || finalMove.boardFull) {
-      return { move: finalMove, result: resolveConnectFourRound(game, finalMove.winnerId, { allowTies: game.allowTies }) };
+      return { move: finalMove, result: resolveConnectFourGame(game, finalMove.winnerId) };
     }
     game.currentPlayerId = game.currentPlayerId === game.creatorId ? game.opponentId : game.creatorId;
   }
   return { move: finalMove, result: null };
 }
 
-test('Connect Four command exposes rounds up to twenty and tie disabling', () => {
+test('Connect Four command starts one complete game without round or draw options', () => {
   const command = connectFourCommand.data.toJSON();
-  const rounds = command.options.find(option => option.name === 'rounds');
-  const disableTies = command.options.find(option => option.name === 'disable_ties');
-
-  assert.equal(rounds.max_value, 20);
-  assert.equal(disableTies.type, 5);
+  assert.deepEqual(command.options, []);
 });
 
 test('Connect Four buttons are handled by the game collector', () => {
@@ -57,9 +46,6 @@ test('Connect Four buttons are handled by the game collector', () => {
     'connectfour:join',
     'connectfour:drop:1',
     'connectfour:surrender',
-    'connectfour:offer-draw',
-    'connectfour:accept-draw',
-    'connectfour:decline-draw',
   ]) {
     assert.equal(isCollectorManagedComponent(customId.split(':')[0]), true, customId);
   }
@@ -103,48 +89,18 @@ test('detects horizontal, vertical, and both diagonal four-in-a-row wins', () =>
   }
 });
 
-test('winning a round awards a point and prepares the next round with the other starter', () => {
-  const game = makeGame(2);
+test('a winning connect-four game ends immediately', () => {
+  const game = makeGame();
   const { move, result } = playColumns(game, [0, 0, 1, 1, 2, 2, 3]);
 
   assert.equal(move.winnerId, game.creatorId);
-  assert.equal(result.status, 'round_finished');
-  assert.equal(game.scores.get(game.creatorId), 1);
-  assert.equal(game.round, 2);
-  assert.equal(game.currentPlayerId, game.opponentId);
-  assert.equal(game.board.flat().every(cell => cell === null), true);
+  assert.equal(result.status, 'finished');
+  assert.equal(result.winnerId, game.creatorId);
+  assert.equal(game.finished, true);
 });
 
-test('matches can complete all twenty rounds', () => {
-  const game = makeGame(20);
-
-  for (let round = 1; round <= 20; round += 1) {
-    const { result } = playColumns(game, [0, 0, 1, 1, 2, 2, 3]);
-    assert.equal(result.round, round);
-    assert.equal(result.status, round === 20 ? 'match_finished' : 'round_finished');
-    assert.equal(game.finished, round === 20);
-  }
-
-  assert.equal(game.scores.get(game.creatorId), 10);
-  assert.equal(game.scores.get(game.opponentId), 10);
-});
-
-test('a tied final score starts sudden death when ties are disabled', () => {
-  const game = makeGame(2, false);
-  game.scores.set(game.creatorId, 1);
-  game.scores.set(game.opponentId, 0);
-  game.round = 2;
-
-  const result = resolveConnectFourRound(game, game.opponentId, { allowTies: false });
-
-  assert.equal(result.status, 'round_finished');
-  assert.equal(result.tiebreakStarted, true);
-  assert.equal(game.round, 3);
-  assert.equal(game.finished, false);
-});
-
-test('a full board replays the round when ties are disabled', () => {
-  const game = makeGame(1, false);
+test('a full board without a winner restarts the game with the other player', () => {
+  const game = makeGame();
   game.board = [
     ['yellow', 'red', 'yellow', 'red', 'red', 'yellow', 'red'],
     ['red', 'red', 'red', 'yellow', 'red', 'yellow', 'yellow'],
@@ -160,24 +116,12 @@ test('a full board replays the round when ties are disabled', () => {
     true,
   );
 
-  const result = resolveConnectFourRound(game, null, { allowTies: false });
+  const result = resolveConnectFourGame(game, null);
 
   assert.equal(result.status, 'replay');
-  assert.equal(game.round, 1);
   assert.equal(game.board.flat().every(cell => cell === null), true);
+  assert.equal(game.currentPlayerId, game.opponentId);
   assert.equal(game.finished, false);
-});
-
-test('players can offer and accept or decline draws; either can forfeit', () => {
-  const game = makeGame(3);
-  assert.deepEqual(offerConnectFourDraw(game, game.creatorId), { status: 'offered' });
-  assert.deepEqual(respondToConnectFourDraw(game, game.creatorId, true), { status: 'own_offer' });
-  assert.deepEqual(respondToConnectFourDraw(game, game.opponentId, false), { status: 'declined' });
-  assert.equal(game.drawOfferId, null);
-
-  assert.deepEqual(offerConnectFourDraw(game, game.opponentId), { status: 'offered' });
-  assert.deepEqual(respondToConnectFourDraw(game, game.creatorId, true), { status: 'accepted' });
-  assert.equal(game.finished, true);
 });
 
 test('surrender declares the other player the winner and rejects spectators', () => {
