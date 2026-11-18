@@ -54,6 +54,7 @@ const VerificationConfigSchema = z
     roleId: z.string().optional(),
     removeRoleId: z.string().nullable().optional(),
     message: z.string().optional(),
+    panelImageUrl: z.string().nullable().optional(),
     buttonText: z.string().default('Verify'),
     autoVerify: AutoVerifyConfigSchema
   })
@@ -117,8 +118,6 @@ export const EconomyDataSchema = z
     lastRob: z.number().int().nonnegative().default(0),
     lastDeposit: z.number().int().nonnegative().default(0),
     lastWithdraw: z.number().int().nonnegative().default(0),
-    xp: z.number().int().nonnegative().default(0),
-    level: z.number().int().nonnegative().default(1),
     inventory: z.record(z.any()).default({}),
     cooldowns: z.record(z.number().int().nonnegative()).default({})
   })

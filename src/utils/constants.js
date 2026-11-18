@@ -4,8 +4,6 @@ export const DEFAULT_ECONOMY_DATA = {
     wallet: 0,
     bank: 0,
     bankLevel: 0,
-    xp: 0,
-    level: 1,
     lastDaily: 0,
     lastWork: 0,
     lastCrime: 0,

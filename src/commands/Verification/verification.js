@@ -187,6 +187,9 @@ async function handleSetup(interaction, guild, client) {
         color: getColor('success')
     });
 
+    const existingPanelImage = guildConfig.verification?.panelImageUrl || null;
+    if (existingPanelImage) verifyEmbed.setImage(existingPanelImage);
+
     const verifyButton = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId("verify_user")
@@ -206,7 +209,8 @@ async function handleSetup(interaction, guild, client) {
         messageId: verifyMessage.id,
         roleId: verifiedRole.id,
         message: message,
-        buttonText: buttonText
+        buttonText: buttonText,
+        panelImageUrl: existingPanelImage
     };
 
     await setGuildConfig(client, guild.id, guildConfig);

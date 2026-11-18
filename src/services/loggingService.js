@@ -11,7 +11,7 @@ import {
   splitComparisonFields,
 } from '../utils/logging/logEmbeds.js';
 
-const LOG_DESTINATIONS = ['audit', 'applications', 'reports'];
+const LOG_DESTINATIONS = ['audit', 'reports'];
 
 const EVENT_TYPES = {
   MODERATION_BAN: 'moderation.ban',
@@ -54,9 +54,6 @@ const EVENT_TYPES = {
   COUNTER_UPDATE: 'counter.update',
   COUNTER_CONFIG: 'counter.config',
 
-  APPLICATION_SUBMIT: 'application.submit',
-  APPLICATION_REVIEW: 'application.review',
-
   REPORT_FILE: 'report.file',
 };
 
@@ -93,8 +90,6 @@ const EVENT_COLORS = {
   'giveaway.delete': 0xE74C3C,
   'counter.update': 0x0099ff,
   'counter.config': 0x5865F2,
-  'application.submit': 0x5865F2,
-  'application.review': 0x57F287,
   'report.file': 0xED4245,
 };
 
@@ -131,13 +126,10 @@ const EVENT_ICONS = {
   'giveaway.delete': '🗑️',
   'counter.update': '📊',
   'counter.config': '⚙️',
-  'application.submit': '📝',
-  'application.review': '📋',
   'report.file': '🚨',
 };
 
 const CATEGORY_DESTINATION = {
-  application: 'applications',
   report: 'reports',
 };
 
@@ -452,13 +444,6 @@ export async function updateIgnoreList(client, guildId, { action, type, id }) {
     logger.error('Error updating ignore list:', error);
     return false;
   }
-}
-
-export function resolveApplicationLogChannel(config, roleSettings = {}, appSettings = {}) {
-  return roleSettings.logChannelId
-    || config?.logging?.channels?.applications
-    || appSettings.logChannelId
-    || null;
 }
 
 export { EVENT_TYPES, EVENT_COLORS, EVENT_ICONS, LOG_DESTINATIONS };

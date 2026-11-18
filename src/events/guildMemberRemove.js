@@ -1,6 +1,6 @@
 import { Events, EmbedBuilder, PermissionFlagsBits } from 'discord.js';
 import { getColor, botConfig } from '../config/bot.js';
-import { getWelcomeConfig, getUserApplications, deleteApplication } from '../utils/database.js';
+import { getWelcomeConfig } from '../utils/database.js';
 import { formatWelcomeMessage } from '../utils/welcome.js';
 import { logEvent, EVENT_TYPES } from '../services/loggingService.js';
 import { getServerCounters, updateCounter } from '../services/serverstatsService.js';
@@ -107,18 +107,6 @@ export default {
             }
         } catch (error) {
             logger.debug('Error updating counters on member leave:', error);
-        }
-
-        try {
-            const userApplications = await getUserApplications(member.client, guild.id, user.id);
-            if (userApplications && userApplications.length > 0) {
-                for (const app of userApplications) {
-                    await deleteApplication(member.client, guild.id, app.id, user.id);
-                }
-                logger.debug(`Removed ${userApplications.length} applications for user ${user.id} in guild ${guild.id}`);
-            }
-        } catch (error) {
-            logger.debug('Error handling applications on member leave:', error);
         }
 
     } catch (error) {

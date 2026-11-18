@@ -38,7 +38,6 @@ const DASHBOARD_CATEGORY_EMOJIS = {
   reactionrole: '🎭',
   giveaway: '🎁',
   counter: '📊',
-  application: '📝',
   report: '🚨',
 };
 
@@ -50,7 +49,6 @@ export const DASHBOARD_CATEGORY_LABELS = {
   reactionrole: 'Reaction Roles',
   giveaway: 'Giveaways',
   counter: 'Counters',
-  application: 'Applications',
   report: 'Reports',
 };
 
@@ -97,11 +95,6 @@ export function createLoggingMainMenuSelect() {
           .setValue('set:audit')
           .setEmoji('🧾'),
         new StringSelectMenuOptionBuilder()
-          .setLabel('Set Applications Channel')
-          .setDescription('New applications and review updates')
-          .setValue('set:applications')
-          .setEmoji('📝'),
-        new StringSelectMenuOptionBuilder()
           .setLabel('Set Reports Channel')
           .setDescription('User reports filed via /report')
           .setValue('set:reports')
@@ -109,10 +102,6 @@ export function createLoggingMainMenuSelect() {
         new StringSelectMenuOptionBuilder()
           .setLabel('Clear Audit Channel')
           .setValue('clear:audit')
-          .setEmoji('🗑️'),
-        new StringSelectMenuOptionBuilder()
-          .setLabel('Clear Applications Channel')
-          .setValue('clear:applications')
           .setEmoji('🗑️'),
         new StringSelectMenuOptionBuilder()
           .setLabel('Clear Reports Channel')

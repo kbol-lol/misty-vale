@@ -28,7 +28,6 @@ export default {
                         .setRequired(true)
                         .addChoices(
                             { name: 'Audit (moderation, messages, members…)', value: 'audit' },
-                            { name: 'Applications', value: 'applications' },
                             { name: 'Reports', value: 'reports' },
                         ),
                 )

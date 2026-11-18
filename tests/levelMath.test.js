@@ -12,6 +12,9 @@ import {
   parseArcaneLevelUp,
   parseLevelImportText,
   renderTemplate,
+  sanitizeImageUrl,
+  pickLevelImage,
+  buildLevelUpPayload,
 } from '../src/utils/levelMath.js';
 
 test('xp curve is consistent in both directions', () => {
@@ -38,8 +41,7 @@ test('config normalisation clamps and repairs values', () => {
   assert.equal(cfg.xpMax >= cfg.xpMin, true);
   assert.equal(cfg.xpMultiplier, 50);
   assert.equal(cfg.cooldownSeconds, 0);
-  assert.equal(cfg.roleMode, 'replace');
-  assert.equal(normalizeLevelingConfig(null).enabled, true);
+    assert.equal(normalizeLevelingConfig(null).enabled, true);
 });
 
 test('rewards are validated, de-duplicated and sorted', () => {
@@ -60,21 +62,35 @@ const REWARDS = [
   { level: 10, roleId: '100000000000000010' },
 ];
 
-test('replace mode keeps only the highest earned reward', () => {
+test('a member only keeps the highest earned level role', () => {
   const res = computeRoleChanges({
-    level: 7, rewards: REWARDS, mode: 'replace',
+    level: 7, rewards: REWARDS,
     memberRoleIds: ['100000000000000001', '999999999999999999'],
   });
   assert.deepEqual(res.toAdd, ['100000000000000005']);
   assert.deepEqual(res.toRemove, ['100000000000000001']);
 });
 
-test('stack mode keeps every earned reward and never touches other roles', () => {
+test('level 1 -> 5: new role is added and the level 1 role removed', () => {
+  const res = computeRoleChanges({ level: 5, rewards: REWARDS, memberRoleIds: ['100000000000000001'] });
+  assert.deepEqual(res.toAdd, ['100000000000000005']);
+  assert.deepEqual(res.toRemove, ['100000000000000001']);
+});
+
+test('several old level roles at once are all removed, other roles are untouched', () => {
   const res = computeRoleChanges({
-    level: 10, rewards: REWARDS, mode: 'stack', memberRoleIds: ['999999999999999999'],
+    level: 20, rewards: REWARDS,
+    memberRoleIds: ['100000000000000001', '100000000000000005', '100000000000000010', '999999999999999999'],
   });
-  assert.deepEqual(res.toAdd, ['100000000000000001', '100000000000000005', '100000000000000010']);
-  assert.deepEqual(res.toRemove, []);
+  assert.deepEqual(res.shouldHave, ['100000000000000010']);
+  assert.deepEqual(res.toAdd, []);
+  assert.deepEqual(res.toRemove.sort(), ['100000000000000001', '100000000000000005']);
+});
+
+test('there is no way to enable stacking level roles', () => {
+  assert.equal('roleMode' in normalizeLevelingConfig({ roleMode: 'stack' }), false);
+  const res = computeRoleChanges({ level: 10, rewards: REWARDS, mode: 'stack', memberRoleIds: [] });
+  assert.deepEqual(res.toAdd, ['100000000000000010']);
 });
 
 test('level 0 earns nothing and strips rewards', () => {
@@ -123,4 +139,79 @@ test('import parser handles csv, json object and json array', () => {
 
 test('template placeholders are replaced', () => {
   assert.equal(renderTemplate('{user} hit {level} in {server}', { user: '@a', level: '3', server: 'S' }), '@a hit 3 in S');
+});
+
+test('image links: only https is accepted', () => {
+  assert.equal(sanitizeImageUrl('https://example.com/a.png'), 'https://example.com/a.png');
+  assert.equal(sanitizeImageUrl('http://example.com/a.png'), null);
+  assert.equal(sanitizeImageUrl('javascript:alert(1)'), null);
+  assert.equal(sanitizeImageUrl('not a url'), null);
+  assert.equal(sanitizeImageUrl(''), null);
+});
+
+test('announce config keeps images, drops invalid ones and sorts level images', () => {
+  const cfg = normalizeLevelingConfig({
+    announce: {
+      imageUrl: 'http://bad.example/x.png',
+      color: 'nope',
+      useEmbed: true,
+      levelImages: [
+        { level: 10, url: 'https://a.example/10.png' },
+        { level: 5, url: 'https://a.example/5.png' },
+        { level: 5, url: 'https://a.example/5b.png' },
+        { level: 0, url: 'https://a.example/0.png' },
+        { level: 7, url: 'ftp://a.example/7.png' },
+      ],
+    },
+  });
+  assert.equal(cfg.announce.imageUrl, null);
+  assert.equal(cfg.announce.color, '#5865F2');
+  assert.equal(cfg.announce.useEmbed, true);
+  assert.deepEqual(cfg.announce.levelImages.map((i) => [i.level, i.url]), [
+    [5, 'https://a.example/5b.png'],
+    [10, 'https://a.example/10.png'],
+  ]);
+});
+
+test('level image: highest entry at or below the level, else the default image', () => {
+  const announce = normalizeLevelingConfig({
+    announce: {
+      imageUrl: 'https://a.example/default.png',
+      levelImages: [{ level: 5, url: 'https://a.example/5.png' }, { level: 25, url: 'https://a.example/25.png' }],
+    },
+  }).announce;
+  assert.equal(pickLevelImage(announce, 3), 'https://a.example/default.png');
+  assert.equal(pickLevelImage(announce, 5), 'https://a.example/5.png');
+  assert.equal(pickLevelImage(announce, 24), 'https://a.example/5.png');
+  assert.equal(pickLevelImage(announce, 30), 'https://a.example/25.png');
+});
+
+test('plain text payload mentions the user and optionally adds an image', () => {
+  const base = normalizeLevelingConfig({ announce: { message: '{user} reached {level} in {server}' } }).announce;
+  const vars = { userId: '123456789012345678', username: 'Bear', level: 11, serverName: 'Misty Vale' };
+  const plain = buildLevelUpPayload(base, vars);
+  assert.equal(plain.content, '<@123456789012345678> reached 11 in Misty Vale');
+  assert.equal(plain.embeds, undefined);
+  assert.deepEqual(plain.allowedMentions, { users: ['123456789012345678'] });
+
+  const withImage = buildLevelUpPayload({ ...base, imageUrl: 'https://a.example/i.png' }, vars);
+  assert.equal(withImage.embeds[0].image.url, 'https://a.example/i.png');
+});
+
+test('embed payload: ping in content, text in embed, title and image applied', () => {
+  const announce = normalizeLevelingConfig({
+    announce: {
+      useEmbed: true, title: 'Level {level}!', color: '#ff0000', message: '{username} leveled up',
+      imageUrl: 'https://a.example/i.png',
+    },
+  }).announce;
+  const out = buildLevelUpPayload(announce, { userId: '123456789012345678', username: 'Bear', level: 4, serverName: 'S' });
+  assert.equal(out.content, '<@123456789012345678>');
+  assert.equal(out.embeds[0].description, 'Bear leveled up');
+  assert.equal(out.embeds[0].title, 'Level 4!');
+  assert.equal(out.embeds[0].color, 0xFF0000);
+  assert.equal(out.embeds[0].image.url, 'https://a.example/i.png');
+
+  const noTitle = buildLevelUpPayload({ ...announce, title: '' }, { userId: '123456789012345678', username: 'Bear', level: 4, serverName: 'S' });
+  assert.equal('title' in noTitle.embeds[0], false);
 });

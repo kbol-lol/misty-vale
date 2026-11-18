@@ -30,17 +30,18 @@ import {
 import { startDashboardSession } from '../../../utils/dashboardSession.js';
 
 async function updateLivePanel(guild, cfg) {
-    if (!cfg.channelId || !cfg.messageId) return;
+    if (!cfg.channelId || !cfg.messageId) return false;
     try {
         const channel = guild.channels.cache.get(cfg.channelId);
-        if (!channel) return;
+        if (!channel) return false;
         const msg = await channel.messages.fetch(cfg.messageId).catch(() => null);
-        if (!msg) return;
+        if (!msg) return false;
 
         const verifyEmbed = new EmbedBuilder()
             .setTitle('Server Verification')
             .setDescription(cfg.message || botConfig.verification.defaultMessage)
             .setColor(getColor('success'));
+        if (cfg.panelImageUrl) verifyEmbed.setImage(cfg.panelImageUrl);
 
         const verifyButton = new ActionRowBuilder().addComponents(
             new ButtonBuilder()
@@ -51,8 +52,10 @@ async function updateLivePanel(guild, cfg) {
         );
 
         await msg.edit({ embeds: [verifyEmbed], components: [verifyButton] });
+        return true;
     } catch (error) {
         logger.warn('Could not update live verification panel:', error.message);
+        return false;
     }
 }
 
@@ -125,6 +128,11 @@ function buildSelectMenu(guildId) {
                 .setDescription('Change the label on the verify button')
                 .setValue('button_text')
                 .setEmoji('🔘'),
+            new StringSelectMenuOptionBuilder()
+                .setLabel('Set Panel Image')
+                .setDescription('Add, change or remove an image on the existing panel')
+                .setValue('image')
+                .setEmoji('🖼️'),
         );
 }
 
@@ -172,6 +180,7 @@ async function repostVerificationPanel(guild, cfg) {
         .setTitle('Server Verification')
         .setDescription(cfg.message || botConfig.verification.defaultMessage)
         .setColor(getColor('success'));
+    if (cfg.panelImageUrl) verifyEmbed.setImage(cfg.panelImageUrl);
 
     const verifyButton = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
@@ -332,6 +341,9 @@ export default {
                         case 'button_text':
                             await handleButtonText(selectInteraction, interaction, cfg, guildId, client);
                             break;
+                        case 'image':
+                            await handleImage(selectInteraction, interaction, cfg, guildId, client);
+                            break;
                     }
                 },
                 onButton: async (btnInteraction) => {
@@ -483,6 +495,7 @@ async function handleChannel(selectInteraction, rootInteraction, cfg, guildId, c
                     .setTitle('Server Verification')
                     .setDescription(cfg.message || botConfig.verification.defaultMessage)
                     .setColor(getColor('success'));
+                if (cfg.panelImageUrl) verifyEmbed.setImage(cfg.panelImageUrl);
 
                 const verifyButton = new ActionRowBuilder().addComponents(
                     new ButtonBuilder()
@@ -767,5 +780,79 @@ async function handleButtonText(selectInteraction, rootInteraction, cfg, guildId
     } catch (error) {
         logger.error('Error in handleButtonText:', error);
         
+    }
+}
+
+async function handleImage(selectInteraction, rootInteraction, cfg, guildId, client) {
+    try {
+        const modal = new ModalBuilder()
+            .setCustomId('verif_cfg_image')
+            .setTitle('Verification Panel Image')
+            .addComponents(
+                new ActionRowBuilder().addComponents(
+                    new TextInputBuilder()
+                        .setCustomId('image_url_input')
+                        .setLabel('Image link (https://...) - empty removes it')
+                        .setStyle(TextInputStyle.Short)
+                        .setPlaceholder('https://example.com/banner.png')
+                        .setValue(cfg.panelImageUrl || '')
+                        .setMaxLength(500)
+                        .setRequired(false),
+                ),
+            );
+
+        await selectInteraction.showModal(modal);
+
+        const submitted = await selectInteraction
+            .awaitModalSubmit({
+                filter: i =>
+                    i.customId === 'verif_cfg_image' && i.user.id === selectInteraction.user.id,
+                time: 120_000,
+            })
+            .catch(() => null);
+
+        if (!submitted) return;
+
+        const raw = submitted.fields.getTextInputValue('image_url_input').trim();
+        let imageUrl = null;
+        if (raw) {
+            try {
+                const parsed = new URL(raw);
+                if (parsed.protocol === 'https:') imageUrl = parsed.toString();
+            } catch {
+                imageUrl = null;
+            }
+            if (!imageUrl) {
+                await replyUserError(submitted, {
+                    type: ErrorTypes.VALIDATION,
+                    message: 'Please enter a valid image link starting with `https://`.',
+                });
+                return;
+            }
+        }
+
+        cfg.panelImageUrl = imageUrl;
+
+        const latestConfig = await getGuildConfig(client, guildId);
+        latestConfig.verification = cfg;
+        await setGuildConfig(client, guildId, latestConfig);
+
+        // Edits the existing panel message in place: same message, same verify button.
+        const updated = await updateLivePanel(rootInteraction.guild, cfg);
+
+        await submitted.reply({
+            embeds: [successEmbed(
+                imageUrl ? 'Panel Image Saved' : 'Panel Image Removed',
+                (imageUrl
+                    ? 'The image was saved and added to the verification panel.'
+                    : 'The image was removed from the verification panel.')
+                + (updated ? '' : '\n\nThe live panel message could not be found. The image will be used the next time the panel is posted (use **Repost Panel**).'),
+            )],
+            flags: MessageFlags.Ephemeral,
+        });
+
+        await refreshDashboard(rootInteraction, cfg, guildId, client);
+    } catch (error) {
+        logger.error('Error in handleImage:', error);
     }
 }

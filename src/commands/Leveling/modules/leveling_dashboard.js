@@ -9,6 +9,7 @@ import {
     LabelBuilder,
     MessageFlags,
     ModalBuilder,
+    PermissionFlagsBits,
     RoleSelectMenuBuilder,
     StringSelectMenuBuilder,
     StringSelectMenuOptionBuilder,
@@ -23,9 +24,12 @@ import { replyUserError, ErrorTypes } from '../../../utils/errorHandler.js';
 import {
     MAX_LEVEL,
     MAX_REWARDS,
+    MAX_LEVEL_IMAGES,
     DEFAULT_ROLE_TIERS,
     matchTierRoles,
     normalizeRewards,
+    buildLevelUpPayload,
+    sanitizeImageUrl,
 } from '../../../utils/levelMath.js';
 import {
     getLevelingConfig,
@@ -79,11 +83,6 @@ async function buildMainView(guild, client) {
             },
             { name: 'XP cooldown', value: `\`${cfg.cooldownSeconds}s\``, inline: true },
             { name: 'Auto-apply roles', value: onOff(cfg.autoApplyRoles), inline: true },
-            {
-                name: 'Role mode',
-                value: cfg.roleMode === 'stack' ? 'Stack (keep every earned role)' : 'Replace (only highest earned role)',
-                inline: true,
-            },
             { name: 'Reward roles', value: `\`${cfg.roleRewards.length}\` configured`, inline: true },
             { name: 'Level-up message', value: announceValue, inline: false },
             { name: 'Message text', value: `\`${cfg.announce.message}\``.slice(0, 1024), inline: false },
@@ -103,8 +102,8 @@ async function buildMainView(guild, client) {
             .setLabel(cfg.autoApplyRoles ? 'Auto Roles: On' : 'Auto Roles: Off')
             .setStyle(cfg.autoApplyRoles ? ButtonStyle.Success : ButtonStyle.Secondary),
         new ButtonBuilder()
-            .setCustomId(id('toggle_mode'))
-            .setLabel(cfg.roleMode === 'stack' ? 'Role Mode: Stack' : 'Role Mode: Replace')
+            .setCustomId(id('open_announce'))
+            .setLabel('Level Log Channel & Message')
             .setStyle(ButtonStyle.Primary),
     );
 
@@ -114,8 +113,7 @@ async function buildMainView(guild, client) {
         .addOptions(
             new StringSelectMenuOptionBuilder().setLabel('Level Reward Roles').setDescription('Choose which role is given at which level').setValue('rewards'),
             new StringSelectMenuOptionBuilder().setLabel('XP Speed').setDescription('Min/max XP, multiplier and cooldown').setValue('xp'),
-            new StringSelectMenuOptionBuilder().setLabel('Level-up Message Mode').setDescription('Cycle: same channel / fixed channel / off').setValue('announce_mode'),
-            new StringSelectMenuOptionBuilder().setLabel('Level-up Message Text & Channel').setDescription('Placeholders: {user} {username} {level} {server}').setValue('announce_text'),
+            new StringSelectMenuOptionBuilder().setLabel('Level Log Channel & Message').setDescription('Channel, message text, embed, images, preview').setValue('announce'),
             new StringSelectMenuOptionBuilder().setLabel('Set a User\'s Level').setDescription('Set the level of any member').setValue('setlevel'),
             new StringSelectMenuOptionBuilder().setLabel('Import Levels from Arcane').setDescription('Scan the Arcane level-up channel and import everyone').setValue('scan'),
             new StringSelectMenuOptionBuilder().setLabel('Ignored Channels').setDescription('Channels that never give XP').setValue('ignored_channels'),
@@ -143,10 +141,10 @@ async function buildRewardsView(guild, client) {
         .setColor(getColor('info'))
         .addFields(
             { name: 'Auto-apply on level up', value: onOff(cfg.autoApplyRoles), inline: true },
-            { name: 'Role mode', value: cfg.roleMode === 'stack' ? 'Stack' : 'Replace', inline: true },
+            { name: 'Role rule', value: 'One level role only', inline: true },
             { name: 'Slots used', value: `\`${cfg.roleRewards.length}/${MAX_REWARDS}\``, inline: true },
         )
-        .setFooter({ text: 'Only roles listed here are ever added or removed by the level system' })
+        .setFooter({ text: 'A member only keeps the highest level role they earned; older level roles are removed. Other roles are never touched.' })
         .setTimestamp();
 
     const buttons = new ActionRowBuilder().addComponents(
@@ -261,51 +259,209 @@ async function handleXpModal(sel, guild, client) {
     return true;
 }
 
-async function handleAnnounceModal(sel, guild, client) {
+function colorOrNull(value) {
+    const text = String(value ?? '').trim();
+    return /^#?[0-9a-fA-F]{6}$/.test(text) ? `#${text.replace('#', '').toUpperCase()}` : null;
+}
+
+async function buildAnnounceView(guild, client) {
     const cfg = await getLevelingConfig(client, guild.id);
-    const modal = new ModalBuilder().setCustomId(`lvl_modal_announce_${guild.id}`).setTitle('Level-up Message');
+    const a = cfg.announce;
+    const id = (action) => `lvl_${guild.id}_${action}`;
+
+    const levelImages = a.levelImages.length
+        ? a.levelImages.map((i) => `Level **${i.level}+** → [image](${i.url})`).join('\n').slice(0, 1000)
+        : '`None`';
+
+    const embed = new EmbedBuilder()
+        .setTitle('Level Log Channel & Message')
+        .setDescription('Choose where level-ups are posted and how the message looks.\nPlaceholders: `{user}` `{username}` `{level}` `{server}`')
+        .setColor(getColor('info'))
+        .addFields(
+            { name: 'Posting', value: ANNOUNCE_LABELS[a.mode], inline: true },
+            { name: 'Log channel', value: a.channelId ? `<#${a.channelId}>` : '`Not set`', inline: true },
+            { name: 'Style', value: a.useEmbed ? 'Embed' : 'Plain text', inline: true },
+            { name: 'Message', value: `\`${a.message}\``.slice(0, 1024), inline: false },
+            { name: 'Embed title / colour', value: `${a.title ? `\`${a.title}\`` : '`No title`'} · \`${a.color}\``, inline: true },
+            { name: 'Default image', value: a.imageUrl ? `[Open image](${a.imageUrl})` : '`None`', inline: true },
+            { name: 'Images per level', value: levelImages, inline: false },
+        )
+        .setFooter({ text: 'Tip: use a permanent image link. Discord attachment links can expire.' })
+        .setTimestamp();
+
+    const row1 = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId(id('ann_mode')).setLabel(`Posting: ${ANNOUNCE_LABELS[a.mode].split(' ')[0]}`).setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId(id('ann_embed')).setLabel(a.useEmbed ? 'Style: Embed' : 'Style: Text').setStyle(a.useEmbed ? ButtonStyle.Success : ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId(id('ann_message')).setLabel('Edit Message').setStyle(ButtonStyle.Primary),
+        new ButtonBuilder().setCustomId(id('ann_image')).setLabel('Set Image').setStyle(ButtonStyle.Primary),
+        new ButtonBuilder().setCustomId(id('ann_levelimg')).setLabel('Image per Level').setStyle(ButtonStyle.Primary),
+    );
 
     const channelSelect = new ChannelSelectMenuBuilder()
-        .setCustomId('announce_channel')
+        .setCustomId(id('ann_channel'))
         .setChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)
-        .setMinValues(0)
-        .setMaxValues(1)
-        .setRequired(false)
-        .setPlaceholder('Fixed channel (optional)');
-    if (cfg.announce.channelId) channelSelect.setDefaultChannels(cfg.announce.channelId);
+        .setPlaceholder('Choose the level log channel...')
+        .setMinValues(1)
+        .setMaxValues(1);
+    if (a.channelId) channelSelect.setDefaultChannels(a.channelId);
 
-    modal.addLabelComponents(
-        new LabelBuilder()
-            .setLabel('Announcement channel')
-            .setDescription('Used when the mode is "A fixed channel". Leave empty to keep the current one.')
-            .setChannelSelectMenuComponent(channelSelect),
+    const row3 = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId(id('ann_create')).setLabel('Create New Channel').setStyle(ButtonStyle.Success),
+        new ButtonBuilder().setCustomId(id('ann_preview')).setLabel('Preview').setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId(id('ann_back')).setLabel('Back').setStyle(ButtonStyle.Secondary),
     );
+
+    return { embeds: [embed], components: [row1, new ActionRowBuilder().addComponents(channelSelect), row3] };
+}
+
+async function handleAnnounceMessageModal(sel, guild, client) {
+    const cfg = await getLevelingConfig(client, guild.id);
+    const modal = new ModalBuilder().setCustomId(`lvl_modal_annmsg_${guild.id}`).setTitle('Level-up Message');
     modal.addComponents(
-        textInput('announce_text', 'Message ({user} {username} {level} {server})', {
-            value: cfg.announce.message,
-            maxLength: 500,
-            style: TextInputStyle.Paragraph,
+        textInput('message', 'Message ({user} {username} {level} {server})', {
+            value: cfg.announce.message, maxLength: 500, style: TextInputStyle.Paragraph,
+        }),
+        textInput('title', 'Embed title (empty = no title)', {
+            value: cfg.announce.title, maxLength: 100, required: false,
+        }),
+        textInput('color', 'Embed colour (hex, e.g. #5865F2)', {
+            value: cfg.announce.color, maxLength: 7, required: false,
         }),
     );
-
     const submitted = await openModal(sel, modal);
     if (!submitted) return false;
 
-    const text = submitted.fields.getTextInputValue('announce_text').trim();
-    if (!text) {
+    const message = submitted.fields.getTextInputValue('message').trim();
+    const title = submitted.fields.getTextInputValue('title').trim();
+    const colorRaw = submitted.fields.getTextInputValue('color').trim();
+    if (!message) {
         await validationError(submitted, 'The message cannot be empty.');
         return false;
     }
-
-    const picked = submitted.fields.getField('announce_channel')?.values?.[0] ?? null;
-    const patch = { announce: { message: text } };
-    if (picked) {
-        patch.announce.channelId = picked;
-        patch.announce.mode = 'channel';
+    const color = colorRaw ? colorOrNull(colorRaw) : cfg.announce.color;
+    if (!color) {
+        await validationError(submitted, 'The colour must be a hex code like `#5865F2`.');
+        return false;
     }
-    await updateLevelingConfig(client, guild.id, patch);
-    await ephemeralReply(submitted, picked ? `Level-up message saved and set to post in <#${picked}>.` : 'Level-up message saved.');
+
+    await updateLevelingConfig(client, guild.id, { announce: { message, title, color } });
+    await ephemeralReply(submitted, 'Level-up message saved. Use **Preview** to see it.');
     return true;
+}
+
+async function handleAnnounceImageModal(sel, guild, client) {
+    const cfg = await getLevelingConfig(client, guild.id);
+    const modal = new ModalBuilder().setCustomId(`lvl_modal_annimg_${guild.id}`).setTitle('Level-up Image');
+    modal.addComponents(
+        textInput('url', 'Image link (https://...) - empty removes it', {
+            value: cfg.announce.imageUrl, maxLength: 500, required: false, placeholder: 'https://example.com/levelup.png',
+        }),
+    );
+    const submitted = await openModal(sel, modal);
+    if (!submitted) return false;
+
+    const raw = submitted.fields.getTextInputValue('url').trim();
+    const url = raw ? sanitizeImageUrl(raw) : null;
+    if (raw && !url) {
+        await validationError(submitted, 'Please enter a valid image link starting with `https://`.');
+        return false;
+    }
+    await updateLevelingConfig(client, guild.id, { announce: { imageUrl: url } });
+    await ephemeralReply(submitted, url ? 'Default level-up image saved.' : 'Default level-up image removed.');
+    return true;
+}
+
+async function handleLevelImageModal(sel, guild, client) {
+    const modal = new ModalBuilder().setCustomId(`lvl_modal_annlvlimg_${guild.id}`).setTitle('Image per Level');
+    modal.addComponents(
+        textInput('level', `From which level on (1 - ${MAX_LEVEL})`, { placeholder: '10', maxLength: 4 }),
+        textInput('url', 'Image link (https://...) - empty removes this level', {
+            maxLength: 500, required: false, placeholder: 'https://example.com/level10.png',
+        }),
+    );
+    const submitted = await openModal(sel, modal);
+    if (!submitted) return false;
+
+    const level = Number(submitted.fields.getTextInputValue('level').trim());
+    const raw = submitted.fields.getTextInputValue('url').trim();
+    if (!Number.isInteger(level) || level < 1 || level > MAX_LEVEL) {
+        await validationError(submitted, `The level must be a whole number between 1 and ${MAX_LEVEL}.`);
+        return false;
+    }
+
+    const cfg = await getLevelingConfig(client, guild.id);
+    const rest = cfg.announce.levelImages.filter((i) => i.level !== level);
+    if (raw) {
+        const url = sanitizeImageUrl(raw);
+        if (!url) {
+            await validationError(submitted, 'Please enter a valid image link starting with `https://`.');
+            return false;
+        }
+        if (rest.length >= MAX_LEVEL_IMAGES) {
+            await validationError(submitted, `You can set at most ${MAX_LEVEL_IMAGES} level images.`);
+            return false;
+        }
+        rest.push({ level, url });
+    }
+    await updateLevelingConfig(client, guild.id, { announce: { levelImages: rest } });
+    await ephemeralReply(submitted, raw ? `Image saved for level **${level}** and above.` : `Image for level **${level}** removed.`);
+    return true;
+}
+
+async function handleCreateChannelModal(sel, guild, client) {
+    const modal = new ModalBuilder().setCustomId(`lvl_modal_anncreate_${guild.id}`).setTitle('Create Level Log Channel');
+    modal.addComponents(textInput('name', 'Channel name', { value: 'level-logs', maxLength: 90 }));
+    const submitted = await openModal(sel, modal);
+    if (!submitted) return false;
+
+    const name = submitted.fields.getTextInputValue('name').trim().toLowerCase()
+        .replace(/[^a-z0-9À-ɏ_\- ]/g, '').replace(/\s+/g, '-').slice(0, 90) || 'level-logs';
+
+    const me = guild.members.me;
+    if (!me?.permissions.has(PermissionFlagsBits.ManageChannels)) {
+        await replyUserError(submitted, {
+            type: ErrorTypes.PERMISSION,
+            message: 'I need the **Manage Channels** permission to create a channel. You can also pick an existing channel in the dashboard.',
+        });
+        return false;
+    }
+
+    try {
+        const channel = await guild.channels.create({
+            name,
+            type: ChannelType.GuildText,
+            topic: 'Level-up announcements',
+            permissionOverwrites: [
+                { id: guild.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ReadMessageHistory], deny: [PermissionFlagsBits.SendMessages] },
+                { id: me.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.EmbedLinks] },
+            ],
+            reason: `Level log channel created by ${submitted.user.tag}`,
+        });
+        await updateLevelingConfig(client, guild.id, { announce: { channelId: channel.id, mode: 'channel' } });
+        await ephemeralReply(submitted, `Created ${channel} (read-only for members) and set it as the level log channel.`);
+        return true;
+    } catch (error) {
+        logger.error('[LEVELING_DASHBOARD] Could not create channel:', error);
+        await replyUserError(submitted, { type: ErrorTypes.UNKNOWN, message: 'I could not create the channel. Check my permissions and the server channel limit.' });
+        return false;
+    }
+}
+
+async function sendAnnouncePreview(i, guild, client) {
+    const cfg = await getLevelingConfig(client, guild.id);
+    const sampleLevel = cfg.announce.levelImages[0]?.level ?? 10;
+    const payload = buildLevelUpPayload(cfg.announce, {
+        userId: i.user.id,
+        username: i.user.username,
+        level: sampleLevel,
+        serverName: guild.name,
+    });
+    await i.reply({
+        ...payload,
+        content: `**Preview** (as if you reached level ${sampleLevel}):\n${payload.content ?? ''}`.slice(0, 2000),
+        allowedMentions: { parse: [] },
+        flags: MessageFlags.Ephemeral,
+    });
 }
 
 async function handleIgnoredModal(sel, guild, client, kind) {
@@ -544,7 +700,9 @@ export default {
             const render = async () => {
                 const view = state.view === 'rewards'
                     ? await buildRewardsView(guild, client)
-                    : await buildMainView(guild, client);
+                    : state.view === 'announce'
+                        ? await buildAnnounceView(guild, client)
+                        : await buildMainView(guild, client);
                 await InteractionHelper.safeEditReply(interaction, view).catch(() => {});
             };
 
@@ -573,12 +731,42 @@ export default {
                                 await updateLevelingConfig(client, guild.id, { autoApplyRoles: !cfg.autoApplyRoles });
                                 break;
                             }
-                            case 'toggle_mode': {
+                            case 'open_announce':
+                                await i.deferUpdate();
+                                state.view = 'announce';
+                                break;
+                            case 'ann_mode': {
                                 await i.deferUpdate();
                                 const cfg = await getLevelingConfig(client, guild.id);
-                                await updateLevelingConfig(client, guild.id, { roleMode: cfg.roleMode === 'stack' ? 'replace' : 'stack' });
+                                const next = ANNOUNCE_MODES[(ANNOUNCE_MODES.indexOf(cfg.announce.mode) + 1) % ANNOUNCE_MODES.length];
+                                await updateLevelingConfig(client, guild.id, { announce: { mode: next } });
                                 break;
                             }
+                            case 'ann_embed': {
+                                await i.deferUpdate();
+                                const cfg = await getLevelingConfig(client, guild.id);
+                                await updateLevelingConfig(client, guild.id, { announce: { useEmbed: !cfg.announce.useEmbed } });
+                                break;
+                            }
+                            case 'ann_message':
+                                await handleAnnounceMessageModal(i, guild, client);
+                                break;
+                            case 'ann_image':
+                                await handleAnnounceImageModal(i, guild, client);
+                                break;
+                            case 'ann_levelimg':
+                                await handleLevelImageModal(i, guild, client);
+                                break;
+                            case 'ann_create':
+                                await handleCreateChannelModal(i, guild, client);
+                                break;
+                            case 'ann_preview':
+                                await sendAnnouncePreview(i, guild, client);
+                                break;
+                            case 'ann_back':
+                                await i.deferUpdate();
+                                state.view = 'main';
+                                break;
                             case 'rw_add':
                                 await handleRewardModal(i, guild, client);
                                 break;
@@ -615,15 +803,9 @@ export default {
                                 case 'xp':
                                     await handleXpModal(i, guild, client);
                                     break;
-                                case 'announce_mode': {
+                                case 'announce':
                                     await i.deferUpdate();
-                                    const cfg = await getLevelingConfig(client, guild.id);
-                                    const next = ANNOUNCE_MODES[(ANNOUNCE_MODES.indexOf(cfg.announce.mode) + 1) % ANNOUNCE_MODES.length];
-                                    await updateLevelingConfig(client, guild.id, { announce: { mode: next } });
-                                    break;
-                                }
-                                case 'announce_text':
-                                    await handleAnnounceModal(i, guild, client);
+                                    state.view = 'announce';
                                     break;
                                 case 'setlevel':
                                     await handleSetLevelModal(i, guild, client);
@@ -645,6 +827,13 @@ export default {
                                 default:
                                     await i.deferUpdate().catch(() => {});
                             }
+                        }
+                    } else if (i.componentType === ComponentType.ChannelSelect) {
+                        if (action === 'ann_channel') {
+                            await i.deferUpdate();
+                            await updateLevelingConfig(client, guild.id, { announce: { channelId: i.values[0], mode: 'channel' } });
+                        } else {
+                            await i.deferUpdate().catch(() => {});
                         }
                     }
                     await render();

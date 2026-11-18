@@ -44,7 +44,6 @@ export async function buildLoggingDashboardView(interaction, client) {
   const channels = loggingStatus.channels || {};
 
   const auditChannel = await formatChannelMention(interaction.guild, channels.audit);
-  const applicationsChannel = await formatChannelMention(interaction.guild, channels.applications);
   const reportsChannel = await formatChannelMention(interaction.guild, channels.reports);
   const lifecycleChannel = await formatChannelMention(interaction.guild, guildConfig.ticketLogsChannelId);
   const transcriptChannel = await formatChannelMention(interaction.guild, guildConfig.ticketTranscriptChannelId);
@@ -76,7 +75,6 @@ export async function buildLoggingDashboardView(interaction, client) {
         name: 'Log Channels',
         value: [
           `**Audit:** ${auditChannel}`,
-          `**Applications:** ${applicationsChannel}`,
           `**Reports:** ${reportsChannel}`,
         ].join('\n'),
         inline: false,

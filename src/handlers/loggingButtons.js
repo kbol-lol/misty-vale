@@ -35,7 +35,6 @@ const LOGGING_CATEGORIES = [...new Set(Object.values(EVENT_TYPES).map((eventType
 
 const DESTINATION_LABELS = {
   audit: 'Audit Log',
-  applications: 'Applications',
   reports: 'Reports',
 };
 

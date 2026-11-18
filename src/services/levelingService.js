@@ -14,7 +14,7 @@ import {
     normalizeLevelingConfig,
     normalizeRewards,
     parseArcaneLevelUp,
-    renderTemplate,
+    buildLevelUpPayload,
     totalXpForLevel,
 } from '../utils/levelMath.js';
 
@@ -147,7 +147,6 @@ export async function applyLevelRoles(guild, member, level, config) {
     const { toAdd, toRemove } = computeRoleChanges({
         level,
         rewards: config.roleRewards,
-        mode: config.roleMode,
         memberRoleIds: new Set(member.roles.cache.keys()),
     });
 
@@ -323,14 +322,12 @@ export async function handleLevelingMessage(message, client) {
 async function announceLevelUp(message, config, level) {
     if (config.announce.mode === 'off') return;
 
-    const text = renderTemplate(config.announce.message, {
-        user: `<@${message.author.id}>`,
+    const options = buildLevelUpPayload(config.announce, {
+        userId: message.author.id,
         username: message.author.username,
-        level: String(level),
-        server: message.guild.name,
+        level,
+        serverName: message.guild.name,
     });
-
-    const options = { content: text, allowedMentions: { users: [message.author.id] } };
 
     if (config.announce.mode === 'channel' && config.announce.channelId) {
         const channel = message.guild.channels.cache.get(config.announce.channelId)

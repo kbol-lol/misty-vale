@@ -49,7 +49,6 @@ export const commandAliases = {
     'coin': 'flip',
     'roll': 'roll',
     'dice': 'roll',
-    'fight': 'fight',
 
     'gcreate': 'gcreate',
     'gstart': 'gcreate',

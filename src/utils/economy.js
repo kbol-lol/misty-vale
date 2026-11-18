@@ -104,17 +104,6 @@ export async function updateBalance(client, guildId, userId, options = {}) {
         data.bank = Math.min(Math.max(0, (data.bank || 0) + options.bank), maxBank);
     }
     
-    if (options.xp !== undefined) {
-        data.xp = Math.max(0, (data.xp || 0) + options.xp);
-        
-        const xpNeeded = Math.floor(5 * Math.pow(data.level || 1, 2) + 50 * (data.level || 1) + 100);
-        if (data.xp >= xpNeeded) {
-            data.xp -= xpNeeded;
-            data.level = (data.level || 1) + 1;
-            data.leveledUp = true;
-        }
-    }
-    
     await setEconomyData(client, guildId, userId, data);
     return data;
 }
