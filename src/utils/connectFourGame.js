@@ -8,6 +8,7 @@ export function createConnectFourBoard() {
 export function dropConnectFourDisc(game, playerId, column) {
   if (game.finished) return { status: 'finished' };
   if (playerId !== game.creatorId && playerId !== game.opponentId) return { status: 'not_player' };
+  if (game.drawOfferId) return { status: 'draw_pending' };
   if (playerId !== game.currentPlayerId) return { status: 'not_turn' };
   if (!Number.isInteger(column) || column < 0 || column >= CONNECT_FOUR_COLUMNS) {
     return { status: 'invalid_column' };
@@ -76,6 +77,31 @@ export function resolveConnectFourGame(game, winnerId) {
 
   game.finished = true;
   return { status: 'finished', winnerId };
+}
+
+export function offerConnectFourDraw(game, playerId) {
+  if (game.finished) return { status: 'finished' };
+  if (playerId !== game.creatorId && playerId !== game.opponentId) return { status: 'not_player' };
+  if (game.drawOfferId) return { status: 'pending' };
+
+  game.drawOfferId = playerId;
+  return { status: 'offered' };
+}
+
+export function respondToConnectFourDraw(game, playerId, accept) {
+  if (game.finished) return { status: 'finished' };
+  if (!game.drawOfferId) return { status: 'missing' };
+  if (playerId !== game.creatorId && playerId !== game.opponentId) return { status: 'not_player' };
+  if (playerId === game.drawOfferId) return { status: 'own_offer' };
+
+  if (accept) {
+    game.finished = true;
+    game.drawOfferId = null;
+    return { status: 'accepted' };
+  }
+
+  game.drawOfferId = null;
+  return { status: 'declined' };
 }
 
 export function surrenderConnectFourGame(game, playerId) {

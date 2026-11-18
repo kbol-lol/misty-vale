@@ -22,9 +22,11 @@ import { getGuildConfig, setConfigValue } from '../../services/config/guildConfi
 import ConfigService from '../../services/config/configService.js';
 import { logger } from '../../utils/logger.js';
 import { botConfig, getCommandPrefix } from '../../config/bot.js';
+import { createSearchButton, openDashboardSearch } from '../../utils/dashboardSearch.js';
 
 const DASHBOARD_CUSTOM_ID = 'config_select';
 const WIZARD_BUTTON_ID = 'config_wizard';
+const SEARCH_BUTTON_ID = 'config_wizard_search';
 const activeWizardSessions = new Set();
 
 const DM_DISABLED_HELP = [
@@ -172,6 +174,7 @@ function buildButtonRow(config, guildId) {
             .setLabel(config.setupWizardCompleted ? 'Re-run Setup Wizard' : 'Start Setup Wizard')
             .setEmoji('📝')
             .setStyle(config.setupWizardCompleted ? ButtonStyle.Secondary : ButtonStyle.Success),
+        createSearchButton(`${SEARCH_BUTTON_ID}:${guildId}`),
     );
 }
 
@@ -602,6 +605,39 @@ async function handleSettingModalSubmit(selectInteraction, rootInteraction, sett
     }
 }
 
+async function openConfigSearch(componentInteraction, rootInteraction) {
+    const guild = rootInteraction.guild;
+    const guildId = rootInteraction.guildId;
+    const client = rootInteraction.client;
+
+    return openDashboardSearch(componentInteraction, {
+        dashboardName: 'Server Configuration',
+        placeholder: 'e.g. prefix, moderator, log channel, wizard',
+        getEntries: async () => {
+            const config = await getGuildConfig(client, guildId);
+            return [
+                { title: 'Server Prefix', description: `\`${config.prefix || getCommandPrefix()}\``, location: 'Settings menu', keywords: ['prefix', 'text commands'], action: 'prefix' },
+                { title: 'Moderator Role', description: formatRoleMention(guild, config.modRole), location: 'Settings menu', keywords: ['mod', 'staff', 'role'], action: 'modRole' },
+                { title: 'Log Channel', description: formatChannelMention(guild, config.logging?.channels?.audit), location: 'Settings menu', keywords: ['audit', 'logs', 'channel'], action: 'logChannelId' },
+                { title: config.setupWizardCompleted ? 'Re-run Setup Wizard' : 'Start Setup Wizard', description: 'Answer a few questions in your DMs', location: 'Button', keywords: ['setup', 'wizard', 'dm'], action: 'wizard' },
+                { title: 'Bot Status', description: getBotPresenceText(), location: 'Read-only (set in bot config)', keywords: ['presence', 'activity', 'status'] },
+                { title: 'Embed Theme Colors', description: 'Set in the bot config file', location: 'Read-only (set in bot config)', keywords: ['color', 'colour', 'theme', 'embed'] },
+                { title: 'Command Access', description: 'Enable or disable commands', location: 'Use /commands dashboard', keywords: ['commands', 'disable', 'enable'] },
+            ];
+        },
+        onPick: async (pick, action) => {
+            if (action === 'wizard') {
+                await pick.deferUpdate();
+                const latestConfig = await getGuildConfig(client, guildId);
+                await runSetupWizard(pick, latestConfig, guild, client, rootInteraction);
+                return;
+            }
+            await showSettingModal(pick, guildId, action);
+            await handleSettingModalSubmit(pick, rootInteraction, action, guildId, client);
+        },
+    });
+}
+
 export default {
     slashOnly: true,
     data: new SlashCommandBuilder()
@@ -647,6 +683,11 @@ export default {
 
             componentCollector.on('collect', async (componentInteraction) => {
                 try {
+                    if (componentInteraction.isButton() && componentInteraction.customId.startsWith(`${SEARCH_BUTTON_ID}:`)) {
+                        await openConfigSearch(componentInteraction, interaction);
+                        return;
+                    }
+
                     if (componentInteraction.isButton()) {
                         await componentInteraction.deferUpdate();
 

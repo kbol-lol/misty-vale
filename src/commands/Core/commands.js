@@ -187,7 +187,7 @@ export default {
           if (!isCommandAccessCustomId(componentInteraction.customId)) {
             return;
           }
-          await handleDashboardComponent(componentInteraction, client);
+          await handleDashboardComponent(componentInteraction, client, { rootInteraction: interaction });
         } catch (error) {
           logger.error('Command access dashboard interaction failed', {
             error: error.message,

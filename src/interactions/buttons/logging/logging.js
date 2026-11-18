@@ -21,4 +21,8 @@ export default [
     name: 'log_dash_remove_filter',
     execute: loggingButtonsHandler.execute,
   },
+  {
+    name: 'log_dash_search',
+    execute: loggingButtonsHandler.execute,
+  },
 ];

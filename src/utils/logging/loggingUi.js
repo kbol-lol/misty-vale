@@ -8,6 +8,7 @@ import {
   StringSelectMenuOptionBuilder,
 } from 'discord.js';
 import { EVENT_TYPES } from '../../services/loggingService.js';
+import { createSearchButton } from '../dashboardSearch.js';
 
 const EVENT_TYPES_BY_CATEGORY = Object.values(EVENT_TYPES).reduce((accumulator, eventType) => {
   const [category] = eventType.split('.');
@@ -131,6 +132,7 @@ export function createLoggingMainActionRow(loggingEnabled = false) {
       .setCustomId('log_dash_refresh')
       .setLabel('Refresh')
       .setStyle(ButtonStyle.Primary),
+    createSearchButton('log_dash_search'),
   );
 }
 

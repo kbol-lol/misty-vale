@@ -18,6 +18,7 @@ import { getGuildConfig, updateGuildConfig } from '../../services/config/guildCo
 import { isReactionLimiterEnabledForChannel } from '../../config/reactionLimiter.js';
 import { InteractionHelper } from '../../utils/interactionHelper.js';
 import { logger } from '../../utils/logger.js';
+import { createSearchButton, openDashboardSearch } from '../../utils/dashboardSearch.js';
 
 const CUSTOM_EMOJI_PATTERN = /^<(a?):([A-Za-z0-9_]+):(\d{17,20})>$/;
 const LIMITS_PER_PAGE = 15;
@@ -250,6 +251,7 @@ export function buildReactionLimiterDashboardPayload(guild, limiterConfig, state
         .setLabel('Next')
         .setStyle(ButtonStyle.Secondary)
         .setDisabled(page >= pageCount - 1),
+      createSearchButton(`${prefix}_search`),
     ),
   );
 
@@ -286,8 +288,67 @@ async function openReactionLimiterDashboard(interaction, client) {
     time: 600_000,
   });
 
+  const buildSearchEntries = () => {
+    const guild = interaction.guild;
+    const limits = Object.entries(state.limiterConfig.limits || {}).sort(([a], [b]) => a.localeCompare(b));
+    const entries = [
+      { title: 'Add limit', description: 'Add a new emoji reaction limit', location: 'Button', keywords: ['new', 'create', 'emoji', 'limit'], action: 'add' },
+    ];
+    limits.forEach(([key, limit], index) => {
+      entries.push({
+        title: `${formatEmojiKey(key, guild)} — ${limit} people`,
+        description: 'Emoji reaction limit',
+        location: `Emoji limits, page ${Math.floor(index / LIMITS_PER_PAGE) + 1} — opening it selects it for Edit / Remove`,
+        keywords: [key, 'emoji', 'limit'],
+        action: `emoji:${key}`.slice(0, 100),
+      });
+    });
+    for (const [channelId, enabled] of Object.entries(state.limiterConfig.channelOverrides || {})) {
+      const channel = guild.channels.cache.get(channelId);
+      entries.push({
+        title: `#${channel?.name ?? channelId}`,
+        description: `Limiter ${enabled ? 'enabled' : 'disabled'} in this channel`,
+        location: 'Channel — opening it selects the channel',
+        keywords: [channelId, 'channel'],
+        action: `channel:${channelId}`,
+      });
+    }
+    return entries;
+  };
+
+  const openPicked = async (pick, action) => {
+    if (action === 'add') {
+      await handleLimitModal(pick, interaction, client, state, render);
+      return;
+    }
+    await pick.deferUpdate();
+    if (action.startsWith('emoji:')) {
+      const key = Object.keys(state.limiterConfig.limits || {})
+        .sort((a, b) => a.localeCompare(b))
+        .find((k) => `emoji:${k}`.slice(0, 100) === action);
+      if (!key) return;
+      const index = Object.keys(state.limiterConfig.limits).sort((a, b) => a.localeCompare(b)).indexOf(key);
+      state.page = Math.floor(index / LIMITS_PER_PAGE);
+      state.selectedEmojiKey = key;
+    } else if (action.startsWith('channel:')) {
+      state.channelId = action.slice('channel:'.length);
+    }
+    state.notice = null;
+    await interaction.editReply(render());
+  };
+
   collector.on('collect', (component) => {
     void (async () => {
+      if (component.customId === `${idPrefix}search`) {
+        await openDashboardSearch(component, {
+          dashboardName: 'Reaction Limiter',
+          placeholder: 'e.g. an emoji name, a channel name, add',
+          getEntries: buildSearchEntries,
+          onPick: openPicked,
+        });
+        return;
+      }
+
       if (component.customId === `${idPrefix}channel`) {
         state.channelId = component.values[0];
         state.notice = null;

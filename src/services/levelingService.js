@@ -15,6 +15,7 @@ import {
     normalizeRewards,
     parseArcaneLevelUp,
     buildLevelUpPayload,
+    findEarnedReward,
     totalXpForLevel,
 } from '../utils/levelMath.js';
 
@@ -38,17 +39,32 @@ export async function getLevelingConfig(client, guildId) {
     return config;
 }
 
+async function saveConfig(client, guildId, config) {
+    const ok = await client.db.set(getLevelingConfigKey(guildId), config);
+    if (ok === false) {
+        configCache.delete(guildId);
+        throw new Error('Could not save the leveling settings (database unavailable).');
+    }
+    configCache.set(guildId, { config, expires: Date.now() + CONFIG_CACHE_MS });
+    return config;
+}
+
 export async function updateLevelingConfig(client, guildId, patch) {
     return Mutex.runExclusive(`leveling-config:${guildId}`, async () => {
         const current = await getLevelingConfig(client, guildId);
         const merged = normalizeLevelingConfig({
             ...current,
             ...patch,
-            announce: { ...current.announce, ...(patch.announce || {}) },
+            announce: {
+                ...current.announce,
+                ...(patch.announce || {}),
+                rewardMessage: {
+                    ...current.announce.rewardMessage,
+                    ...(patch.announce?.rewardMessage || {}),
+                },
+            },
         });
-        await client.db.set(getLevelingConfigKey(guildId), merged);
-        configCache.set(guildId, { config: merged, expires: Date.now() + CONFIG_CACHE_MS });
-        return merged;
+        return saveConfig(client, guildId, merged);
     });
 }
 
@@ -58,9 +74,7 @@ export async function setRoleReward(client, guildId, level, roleId) {
         const rewards = current.roleRewards.filter((r) => r.level !== level && r.roleId !== roleId);
         rewards.push({ level, roleId });
         const merged = normalizeLevelingConfig({ ...current, roleRewards: normalizeRewards(rewards) });
-        await client.db.set(getLevelingConfigKey(guildId), merged);
-        configCache.set(guildId, { config: merged, expires: Date.now() + CONFIG_CACHE_MS });
-        return merged;
+        return saveConfig(client, guildId, merged);
     });
 }
 
@@ -71,9 +85,7 @@ export async function removeRoleReward(client, guildId, level) {
             ...current,
             roleRewards: current.roleRewards.filter((r) => r.level !== level),
         });
-        await client.db.set(getLevelingConfigKey(guildId), merged);
-        configCache.set(guildId, { config: merged, expires: Date.now() + CONFIG_CACHE_MS });
-        return merged;
+        return saveConfig(client, guildId, merged);
     });
 }
 
@@ -103,11 +115,13 @@ export async function getUserLevelProgress(client, guildId, userId) {
 }
 
 async function writeUserData(client, guildId, userId, data) {
-    await client.db.set(getLevelingUserKey(guildId, userId), {
+    const ok = await client.db.set(getLevelingUserKey(guildId, userId), {
         xp: data.xp,
         messages: data.messages ?? 0,
         updatedAt: Date.now(),
     });
+    // the database layer reports failures with `false` instead of throwing
+    if (ok === false) throw new Error(`Could not save level data for user ${userId}`);
 }
 
 export async function getLeaderboard(client, guildId, { limit = 10, offset = 0 } = {}) {
@@ -313,20 +327,34 @@ export async function handleLevelingMessage(message, client) {
     });
 
     if (outcome.level > outcome.previousLevel) {
-        await announceLevelUp(message, config, outcome.level).catch((error) =>
+        await announceLevelUp(message, config, outcome).catch((error) =>
             logger.debug(`[Leveling] Announce failed: ${error.message}`));
     }
     return outcome;
 }
 
-async function announceLevelUp(message, config, level) {
+/** Build the level-up message for a member, including role reward / per-level messages. */
+export function buildLevelUpMessage(guild, user, config, { level, previousLevel }) {
+    const reward = findEarnedReward(config.roleRewards, previousLevel, level);
+    const roleName = reward ? guild.roles.cache.get(reward.roleId)?.name ?? null : null;
+    return buildLevelUpPayload(config.announce, {
+        userId: user.id,
+        username: user.username,
+        level,
+        previousLevel,
+        serverName: guild.name,
+        rewards: config.roleRewards,
+        rolesEnabled: config.autoApplyRoles,
+        roleName,
+    });
+}
+
+async function announceLevelUp(message, config, outcome) {
     if (config.announce.mode === 'off') return;
 
-    const options = buildLevelUpPayload(config.announce, {
-        userId: message.author.id,
-        username: message.author.username,
-        level,
-        serverName: message.guild.name,
+    const options = buildLevelUpMessage(message.guild, message.author, config, {
+        level: outcome.level,
+        previousLevel: outcome.previousLevel,
     });
 
     if (config.announce.mode === 'channel' && config.announce.channelId) {

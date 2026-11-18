@@ -20,6 +20,8 @@ import { getGuildConfig, patchGuildConfig } from '../../services/config/guildCon
 import { handleInteractionError, ErrorTypes, KbolsBotError } from '../../utils/errorHandler.js';
 import { InteractionHelper } from '../../utils/interactionHelper.js';
 import { logger } from '../../utils/logger.js';
+import { createSearchButton, openDashboardSearch } from '../../utils/dashboardSearch.js';
+import { getDashboardLocale, tr } from '../../utils/dashboardLocale.js';
 
 const EPHEMERAL = MessageFlags.Ephemeral;
 const ACTION_OPTIONS = [
@@ -29,9 +31,9 @@ const ACTION_OPTIONS = [
 ];
 
 const REQUIRED_PERMISSIONS = {
-    ban: [PermissionFlagsBits.BanMembers, 'Ban Members'],
-    kick: [PermissionFlagsBits.KickMembers, 'Kick Members'],
-    timeout: [PermissionFlagsBits.ModerateMembers, 'Moderate Members'],
+    ban: [PermissionFlagsBits.BanMembers, 'Ban Members', 'Mitglieder bannen'],
+    kick: [PermissionFlagsBits.KickMembers, 'Kick Members', 'Mitglieder kicken'],
+    timeout: [PermissionFlagsBits.ModerateMembers, 'Moderate Members', 'Mitglieder im Timeout'],
 };
 
 function settingIds(guildId) {
@@ -45,6 +47,7 @@ function settingIds(guildId) {
         clearChannel: `honeypot_clear_channel_${guildId}`,
         logChannel: `honeypot_log_channel_${guildId}`,
         clearLogChannel: `honeypot_clear_log_channel_${guildId}`,
+        search: `honeypot_search_${guildId}`,
     };
 }
 
@@ -52,42 +55,51 @@ function truncate(value, limit = 900) {
     return value.length > limit ? `${value.slice(0, limit - 3)}...` : value;
 }
 
-function buildDashboardEmbed(guild, settings) {
+function buildDashboardEmbed(guild, settings, L = 'en') {
     const channel = settings.channelId ? guild.channels.cache.get(settings.channelId) : null;
     const logChannel = settings.logChannelId ? guild.channels.cache.get(settings.logChannelId) : null;
     const action = ACTION_OPTIONS.find(option => option.value === settings.action)?.name || 'Ban';
-    const dmPreview = settings.dmMessage ? truncate(settings.dmMessage) : '`(leer)`';
+    const dmPreview = settings.dmMessage ? truncate(settings.dmMessage) : tr(L, '`(empty)`', '`(leer)`');
+    const notSet = tr(L, '`Not set`', '`Nicht gesetzt`');
+    const active = tr(L, '🟢 Active', '🟢 Aktiv');
+    const off = tr(L, '⚫ Off', '⚫ Aus');
 
     return new EmbedBuilder()
         .setTitle('Honeypot Dashboard')
-        .setDescription(
+        .setDescription(tr(L,
+            'Set a forbidden channel and choose how the bot reacts to messages there. ' +
+            'Server owners, administrators, server managers and bots are exempt. ' +
+            'DM placeholders: `{server}`, `{user}`, `{action}`.',
             'Lege einen verbotenen Kanal fest und wähle, wie der Bot auf Nachrichten dort reagiert. ' +
             'Serverbesitzer, Administratoren, Server-Manager und Bots werden ausgenommen. ' +
-            'DM-Platzhalter: `{server}`, `{user}`, `{action}`.',
-        )
+            'DM-Platzhalter: `{server}`, `{user}`, `{action}`.'))
         .setColor(getColor('info'))
         .addFields(
-            { name: 'Status', value: settings.enabled ? '🟢 Aktiv' : '⚫ Aus', inline: true },
-            { name: 'Honeypot-Kanal', value: channel ? `<#${channel.id}>` : '`Nicht gesetzt`', inline: true },
-            { name: 'Protokoll-Kanal', value: logChannel ? `<#${logChannel.id}>` : '`Nicht gesetzt`', inline: true },
-            { name: 'Aktion', value: action, inline: true },
+            { name: 'Status', value: settings.enabled ? active : off, inline: true },
+            { name: tr(L, 'Honeypot channel', 'Honeypot-Kanal'), value: channel ? `<#${channel.id}>` : notSet, inline: true },
+            { name: tr(L, 'Log channel', 'Protokoll-Kanal'), value: logChannel ? `<#${logChannel.id}>` : notSet, inline: true },
+            { name: tr(L, 'Action', 'Aktion'), value: action, inline: true },
             {
-                name: 'Timeout-Dauer',
-                value: settings.action === 'timeout' ? `${settings.timeoutMinutes} Minuten` : '`Nicht verwendet`',
+                name: tr(L, 'Timeout duration', 'Timeout-Dauer'),
+                value: settings.action === 'timeout'
+                    ? tr(L, `${settings.timeoutMinutes} minutes`, `${settings.timeoutMinutes} Minuten`)
+                    : tr(L, '`Not used`', '`Nicht verwendet`'),
                 inline: true,
             },
-            { name: 'Direktnachricht', value: settings.dmEnabled ? '🟢 Aktiv' : '⚫ Aus', inline: true },
-            { name: 'DM-Text', value: dmPreview, inline: false },
+            { name: tr(L, 'Direct message', 'Direktnachricht'), value: settings.dmEnabled ? active : off, inline: true },
+            { name: tr(L, 'DM text', 'DM-Text'), value: dmPreview, inline: false },
         )
-        .setFooter({ text: 'Nur Server-Manager können dieses Menü verwenden. Es schließt sich nach 10 Minuten.' })
+        .setFooter({ text: tr(L,
+            'Only server managers can use this menu. It closes after 10 minutes.',
+            'Nur Server-Manager können dieses Menü verwenden. Es schließt sich nach 10 Minuten.') })
         .setTimestamp();
 }
 
-function buildDashboardComponents(guildId, settings) {
+function buildDashboardComponents(guildId, settings, L = 'en') {
     const ids = settingIds(guildId);
     const actionMenu = new StringSelectMenuBuilder()
         .setCustomId(ids.action)
-        .setPlaceholder('Aktion auswählen...')
+        .setPlaceholder(tr(L, 'Choose action...', 'Aktion auswählen...'))
         .addOptions(
             ACTION_OPTIONS.map(option => ({
                 label: option.name,
@@ -98,14 +110,14 @@ function buildDashboardComponents(guildId, settings) {
 
     const channelMenu = new ChannelSelectMenuBuilder()
         .setCustomId(ids.channel)
-        .setPlaceholder('Honeypot-Kanal auswählen...')
+        .setPlaceholder(tr(L, 'Choose honeypot channel...', 'Honeypot-Kanal auswählen...'))
         .setMinValues(1)
         .setMaxValues(1)
         .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement);
 
     const logChannelMenu = new ChannelSelectMenuBuilder()
         .setCustomId(ids.logChannel)
-        .setPlaceholder('Protokoll-Kanal auswählen...')
+        .setPlaceholder(tr(L, 'Choose log channel...', 'Protokoll-Kanal auswählen...'))
         .setMinValues(1)
         .setMaxValues(1)
         .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement);
@@ -113,24 +125,24 @@ function buildDashboardComponents(guildId, settings) {
     const buttons = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId(ids.toggle)
-            .setLabel(settings.enabled ? 'Honeypot ausschalten' : 'Honeypot einschalten')
+            .setLabel(settings.enabled ? tr(L, 'Turn honeypot off', 'Honeypot ausschalten') : tr(L, 'Turn honeypot on', 'Honeypot einschalten'))
             .setStyle(settings.enabled ? ButtonStyle.Danger : ButtonStyle.Success),
         new ButtonBuilder()
             .setCustomId(ids.toggleDm)
-            .setLabel(settings.dmEnabled ? 'DM ausschalten' : 'DM einschalten')
+            .setLabel(settings.dmEnabled ? tr(L, 'Turn DM off', 'DM ausschalten') : tr(L, 'Turn DM on', 'DM einschalten'))
             .setStyle(settings.dmEnabled ? ButtonStyle.Secondary : ButtonStyle.Primary),
         new ButtonBuilder()
             .setCustomId(ids.editDm)
-            .setLabel('DM-Text bearbeiten')
+            .setLabel(tr(L, 'Edit DM text', 'DM-Text bearbeiten'))
             .setStyle(ButtonStyle.Secondary),
         new ButtonBuilder()
             .setCustomId(ids.editTimeout)
-            .setLabel('Timeout-Dauer')
+            .setLabel(tr(L, 'Timeout duration', 'Timeout-Dauer'))
             .setStyle(ButtonStyle.Secondary)
             .setDisabled(settings.action !== 'timeout'),
         new ButtonBuilder()
             .setCustomId(ids.clearChannel)
-            .setLabel('Kanal entfernen')
+            .setLabel(tr(L, 'Remove channel', 'Kanal entfernen'))
             .setStyle(ButtonStyle.Secondary)
             .setDisabled(!settings.channelId),
     );
@@ -143,9 +155,10 @@ function buildDashboardComponents(guildId, settings) {
         new ActionRowBuilder().addComponents(
             new ButtonBuilder()
                 .setCustomId(ids.clearLogChannel)
-                .setLabel('Protokoll-Kanal entfernen')
+                .setLabel(tr(L, 'Remove log channel', 'Protokoll-Kanal entfernen'))
                 .setStyle(ButtonStyle.Secondary)
                 .setDisabled(!settings.logChannelId),
+            createSearchButton(ids.search, { locale: L }),
         ),
     ];
 }
@@ -155,7 +168,7 @@ async function saveSettings(client, guildId, updates) {
     return config.honeypot;
 }
 
-async function validateCanEnable(guild, settings) {
+async function validateCanEnable(guild, settings, L = 'en') {
     const channel = settings.channelId ? guild.channels.cache.get(settings.channelId) : null;
     const botMember = guild.members.me || await guild.members.fetchMe();
 
@@ -163,7 +176,7 @@ async function validateCanEnable(guild, settings) {
         throw new KbolsBotError(
             'Honeypot channel missing',
             ErrorTypes.VALIDATION,
-            'Wähle zuerst einen Text- oder Ankündigungskanal als Honeypot-Kanal.',
+            tr(L, 'First choose a text or announcement channel as the honeypot channel.', 'Wähle zuerst einen Text- oder Ankündigungskanal als Honeypot-Kanal.'),
         );
     }
 
@@ -171,7 +184,9 @@ async function validateCanEnable(guild, settings) {
         throw new KbolsBotError(
             'Bot is missing the moderation permission',
             ErrorTypes.PERMISSION,
-            `Dem Bot fehlt die Berechtigung „${REQUIRED_PERMISSIONS[settings.action][1]}“.`,
+            tr(L,
+                `The bot is missing the "${REQUIRED_PERMISSIONS[settings.action][1]}" permission.`,
+                `Dem Bot fehlt die Berechtigung „${REQUIRED_PERMISSIONS[settings.action][2]}“.`),
         );
     }
 
@@ -182,12 +197,14 @@ async function validateCanEnable(guild, settings) {
         throw new KbolsBotError(
             'Bot cannot delete honeypot messages',
             ErrorTypes.PERMISSION,
-            'Der Bot benötigt im ausgewählten Honeypot-Kanal die Berechtigungen „Kanal ansehen“ und „Nachrichten verwalten“, damit Nachrichten gelöscht werden können.',
+            tr(L,
+                'The bot needs the "View Channel" and "Manage Messages" permissions in the honeypot channel so it can delete messages.',
+                'Der Bot benötigt im ausgewählten Honeypot-Kanal die Berechtigungen „Kanal ansehen“ und „Nachrichten verwalten“, damit Nachrichten gelöscht werden können.'),
         );
     }
 }
 
-async function validateLogChannel(guild, channel) {
+async function validateLogChannel(guild, channel, L = 'en') {
     const botMember = guild.members.me || await guild.members.fetchMe();
     const requiredPermissions = [
         PermissionFlagsBits.ViewChannel,
@@ -198,25 +215,29 @@ async function validateLogChannel(guild, channel) {
         throw new KbolsBotError(
             'Bot cannot write honeypot logs',
             ErrorTypes.PERMISSION,
-            'Der Bot benötigt im Protokoll-Kanal die Berechtigungen „Kanal ansehen“, „Nachrichten senden“ und „Links einbetten“.',
+            tr(L,
+                'The bot needs the "View Channel", "Send Messages" and "Embed Links" permissions in the log channel.',
+                'Der Bot benötigt im Protokoll-Kanal die Berechtigungen „Kanal ansehen“, „Nachrichten senden“ und „Links einbetten“.'),
         );
     }
 }
 
 async function renderDashboard(interaction, settings) {
+    const L = getDashboardLocale(interaction);
     await InteractionHelper.safeEditReply(interaction, {
-        embeds: [buildDashboardEmbed(interaction.guild, settings)],
-        components: buildDashboardComponents(interaction.guildId, settings),
+        embeds: [buildDashboardEmbed(interaction.guild, settings, L)],
+        components: buildDashboardComponents(interaction.guildId, settings, L),
         flags: EPHEMERAL,
     });
 }
 
 async function handleModal(buttonInteraction, rootInteraction, settings, client, guildId, field) {
+    const L = getDashboardLocale(buttonInteraction);
     const isMessage = field === 'dmMessage';
     const modalId = `honeypot_modal_${field}_${buttonInteraction.id}`;
     const input = new TextInputBuilder()
         .setCustomId(field)
-        .setLabel(isMessage ? 'Nachricht an sanktionierte Nutzer' : 'Timeout in Minuten')
+        .setLabel(isMessage ? tr(L, 'Message to punished users', 'Nachricht an sanktionierte Nutzer') : tr(L, 'Timeout in minutes', 'Timeout in Minuten'))
         .setStyle(isMessage ? TextInputStyle.Paragraph : TextInputStyle.Short)
         .setRequired(isMessage ? false : true)
         .setMaxLength(isMessage ? 2000 : 5);
@@ -226,13 +247,13 @@ async function handleModal(buttonInteraction, rootInteraction, settings, client,
     } else if (!isMessage) {
         input
             .setMinLength(1)
-            .setPlaceholder(`1 bis ${MAX_HONEYPOT_TIMEOUT_MINUTES} Minuten`)
+            .setPlaceholder(tr(L, `1 to ${MAX_HONEYPOT_TIMEOUT_MINUTES} minutes`, `1 bis ${MAX_HONEYPOT_TIMEOUT_MINUTES} Minuten`))
             .setValue(String(settings.timeoutMinutes));
     }
 
     const modal = new ModalBuilder()
         .setCustomId(modalId)
-        .setTitle(isMessage ? 'Honeypot-DM bearbeiten' : 'Timeout-Dauer einstellen')
+        .setTitle(isMessage ? tr(L, 'Edit honeypot DM', 'Honeypot-DM bearbeiten') : tr(L, 'Set timeout duration', 'Timeout-Dauer einstellen'))
         .addComponents(new ActionRowBuilder().addComponents(input));
 
     await buttonInteraction.showModal(modal);
@@ -263,14 +284,16 @@ async function handleModal(buttonInteraction, rootInteraction, settings, client,
                 throw new KbolsBotError(
                     'Invalid timeout duration',
                     ErrorTypes.VALIDATION,
-                    `Gib eine ganze Zahl zwischen 1 und ${MAX_HONEYPOT_TIMEOUT_MINUTES} Minuten ein.`,
+                    tr(L,
+                        `Enter a whole number between 1 and ${MAX_HONEYPOT_TIMEOUT_MINUTES} minutes.`,
+                        `Gib eine ganze Zahl zwischen 1 und ${MAX_HONEYPOT_TIMEOUT_MINUTES} Minuten ein.`),
                 );
             }
             update = { timeoutMinutes };
         }
 
         settings = await saveSettings(client, guildId, update);
-        await submitted.editReply({ content: 'Honeypot-Einstellung gespeichert.' });
+        await submitted.editReply({ content: tr(L, 'Honeypot setting saved.', 'Honeypot-Einstellung gespeichert.') });
         await renderDashboard(rootInteraction, settings);
         return settings;
     } catch (error) {
@@ -281,66 +304,97 @@ async function handleModal(buttonInteraction, rootInteraction, settings, client,
     }
 }
 
-async function handleDashboardComponent(component, rootInteraction, settings, client, guildId) {
-    const ids = settingIds(guildId);
+function buildHoneypotSearchEntries(guild, settings, ids, L = 'en') {
+    const channel = settings.channelId ? guild.channels.cache.get(settings.channelId) : null;
+    const logChannel = settings.logChannelId ? guild.channels.cache.get(settings.logChannelId) : null;
+    const action = ACTION_OPTIONS.find(option => option.value === settings.action)?.name || 'Ban';
 
-    if (component.customId === ids.editDm || component.customId === ids.editTimeout) {
+    const activeText = tr(L, 'Active', 'Aktiv');
+    const offText = tr(L, 'Off', 'Aus');
+    const notSet = tr(L, 'Not set', 'Nicht gesetzt');
+
+    const entries = [
+        { title: settings.enabled ? tr(L, 'Turn honeypot off', 'Honeypot ausschalten') : tr(L, 'Turn honeypot on', 'Honeypot einschalten'), description: `Status: ${settings.enabled ? activeText : offText}`, location: 'Button', keywords: ['status', 'an', 'aus', 'aktivieren', 'enable', 'disable', 'on', 'off'], action: ids.toggle },
+        { title: tr(L, 'Honeypot channel', 'Honeypot-Kanal'), description: channel ? `#${channel.name}` : notSet, location: tr(L, 'Menu "Choose honeypot channel"', 'Menü „Honeypot-Kanal auswählen“'), keywords: ['kanal', 'channel', 'verboten', 'falle', 'trap', 'forbidden'] },
+        { title: tr(L, 'Log channel', 'Protokoll-Kanal'), description: logChannel ? `#${logChannel.name}` : notSet, location: tr(L, 'Menu "Choose log channel"', 'Menü „Protokoll-Kanal auswählen“'), keywords: ['log', 'protokoll', 'kanal', 'channel'] },
+        { title: tr(L, 'Action', 'Aktion'), description: action, location: tr(L, 'Menu "Choose action"', 'Menü „Aktion auswählen“'), keywords: ['ban', 'kick', 'timeout', 'mute', 'strafe', 'action', 'punishment'] },
+        { title: settings.dmEnabled ? tr(L, 'Turn DM off', 'DM ausschalten') : tr(L, 'Turn DM on', 'DM einschalten'), description: `${tr(L, 'Direct message', 'Direktnachricht')}: ${settings.dmEnabled ? activeText : offText}`, location: 'Button', keywords: ['dm', 'direktnachricht', 'nachricht', 'message', 'direct'], action: ids.toggleDm },
+        { title: tr(L, 'Edit DM text', 'DM-Text bearbeiten'), description: settings.dmMessage || tr(L, '(empty)', '(leer)'), location: 'Button', keywords: ['dm', 'text', 'nachricht', 'message'], action: ids.editDm },
+    ];
+
+    if (settings.action === 'timeout') {
+        entries.push({ title: tr(L, 'Timeout duration', 'Timeout-Dauer'), description: tr(L, `${settings.timeoutMinutes} minutes`, `${settings.timeoutMinutes} Minuten`), location: 'Button', keywords: ['timeout', 'dauer', 'minuten', 'minutes', 'duration', 'mute'], action: ids.editTimeout });
+    }
+    if (settings.channelId) {
+        entries.push({ title: tr(L, 'Remove channel', 'Kanal entfernen'), description: tr(L, 'Remove the honeypot channel (turns the honeypot off)', 'Honeypot-Kanal entfernen (schaltet den Honeypot aus)'), location: 'Button', keywords: ['kanal', 'entfernen', 'löschen', 'remove', 'channel', 'delete'], action: ids.clearChannel });
+    }
+    if (settings.logChannelId) {
+        entries.push({ title: tr(L, 'Remove log channel', 'Protokoll-Kanal entfernen'), description: tr(L, 'Reset the log channel', 'Protokoll-Kanal zurücksetzen'), location: 'Button', keywords: ['log', 'protokoll', 'entfernen', 'remove', 'channel'], action: ids.clearLogChannel });
+    }
+    return entries;
+}
+
+async function handleDashboardComponent(component, rootInteraction, settings, client, guildId, customId = component.customId) {
+    const ids = settingIds(guildId);
+    const L = getDashboardLocale(component);
+
+    if (customId === ids.editDm || customId === ids.editTimeout) {
         return handleModal(
             component,
             rootInteraction,
             settings,
             client,
             guildId,
-            component.customId === ids.editDm ? 'dmMessage' : 'timeoutMinutes',
+            customId === ids.editDm ? 'dmMessage' : 'timeoutMinutes',
         );
     }
 
     await component.deferUpdate();
 
-    if (component.customId === ids.channel) {
+    if (customId === ids.channel) {
         const channel = component.channels.first();
         if (!channel || ![ChannelType.GuildText, ChannelType.GuildAnnouncement].includes(channel.type)) {
             throw new KbolsBotError(
                 'Invalid honeypot channel',
                 ErrorTypes.VALIDATION,
-                'Wähle einen Text- oder Ankündigungskanal aus.',
+                tr(L, 'Choose a text or announcement channel.', 'Wähle einen Text- oder Ankündigungskanal aus.'),
             );
         }
         if (settings.enabled) {
-            await validateCanEnable(component.guild, { ...settings, channelId: channel.id });
+            await validateCanEnable(component.guild, { ...settings, channelId: channel.id }, L);
         }
         settings = await saveSettings(client, guildId, { channelId: channel.id });
-    } else if (component.customId === ids.logChannel) {
+    } else if (customId === ids.logChannel) {
         const channel = component.channels.first();
         if (!channel || ![ChannelType.GuildText, ChannelType.GuildAnnouncement].includes(channel.type)) {
             throw new KbolsBotError(
                 'Invalid honeypot log channel',
                 ErrorTypes.VALIDATION,
-                'Wähle einen Text- oder Ankündigungskanal als Protokoll-Kanal aus.',
+                tr(L, 'Choose a text or announcement channel as the log channel.', 'Wähle einen Text- oder Ankündigungskanal als Protokoll-Kanal aus.'),
             );
         }
-        await validateLogChannel(component.guild, channel);
+        await validateLogChannel(component.guild, channel, L);
         settings = await saveSettings(client, guildId, { logChannelId: channel.id });
-    } else if (component.customId === ids.action) {
+    } else if (customId === ids.action) {
         const action = component.values[0];
         if (!ACTION_OPTIONS.some(option => option.value === action)) {
-            throw new KbolsBotError('Invalid honeypot action', ErrorTypes.VALIDATION, 'Diese Aktion ist nicht verfügbar.');
+            throw new KbolsBotError('Invalid honeypot action', ErrorTypes.VALIDATION, tr(L, 'This action is not available.', 'Diese Aktion ist nicht verfügbar.'));
         }
         if (settings.enabled) {
-            await validateCanEnable(component.guild, { ...settings, action });
+            await validateCanEnable(component.guild, { ...settings, action }, L);
         }
         settings = await saveSettings(client, guildId, { action });
-    } else if (component.customId === ids.toggle) {
+    } else if (customId === ids.toggle) {
         const enabled = !settings.enabled;
         if (enabled) {
-            await validateCanEnable(component.guild, settings);
+            await validateCanEnable(component.guild, settings, L);
         }
         settings = await saveSettings(client, guildId, { enabled });
-    } else if (component.customId === ids.toggleDm) {
+    } else if (customId === ids.toggleDm) {
         settings = await saveSettings(client, guildId, { dmEnabled: !settings.dmEnabled });
-    } else if (component.customId === ids.clearChannel) {
+    } else if (customId === ids.clearChannel) {
         settings = await saveSettings(client, guildId, { channelId: null, enabled: false });
-    } else if (component.customId === ids.clearLogChannel) {
+    } else if (customId === ids.clearLogChannel) {
         settings = await saveSettings(client, guildId, { logChannelId: null });
     } else {
         return;
@@ -365,12 +419,15 @@ export default {
         ),
 
     async execute(interaction, _config, client) {
+        const L = getDashboardLocale(interaction);
         try {
             if (!interaction.inGuild() || !interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) {
                 throw new KbolsBotError(
                     'Manage Server permission required',
                     ErrorTypes.PERMISSION,
-                    'Du brauchst die Berechtigung „Server verwalten“, um das Honeypot-Menü zu nutzen.',
+                    tr(L,
+                        'You need the "Manage Server" permission to use the honeypot menu.',
+                        'Du brauchst die Berechtigung „Server verwalten“, um das Honeypot-Menü zu nutzen.'),
                 );
             }
 
@@ -388,8 +445,31 @@ export default {
                 time: 600_000,
             });
 
+            const ids = settingIds(interaction.guildId);
+
             collector.on('collect', async component => {
                 try {
+                    if (component.customId === ids.search) {
+                        await openDashboardSearch(component, {
+                            dashboardName: 'Honeypot',
+                            locale: L,
+                            placeholder: tr(L, 'e.g. channel, action, DM, timeout, log', 'z. B. Kanal, Aktion, DM, Timeout, Protokoll'),
+                            getEntries: () => buildHoneypotSearchEntries(interaction.guild, settings, ids, L),
+                            onPick: async (pick, actionId) => {
+                                const nextSettings = await handleDashboardComponent(
+                                    pick,
+                                    interaction,
+                                    settings,
+                                    client,
+                                    interaction.guildId,
+                                    actionId,
+                                );
+                                if (nextSettings) settings = nextSettings;
+                            },
+                        });
+                        return;
+                    }
+
                     const nextSettings = await handleDashboardComponent(
                         component,
                         interaction,
@@ -410,8 +490,10 @@ export default {
                 if (reason !== 'time') return;
                 await InteractionHelper.safeEditReply(interaction, {
                     embeds: [new EmbedBuilder()
-                        .setTitle('Honeypot Dashboard geschlossen')
-                        .setDescription('Öffne `/honeypot dashboard` erneut, um Einstellungen zu ändern.')
+                        .setTitle(tr(L, 'Honeypot dashboard closed', 'Honeypot Dashboard geschlossen'))
+                        .setDescription(tr(L,
+                            'Open `/honeypot dashboard` again to change settings.',
+                            'Öffne `/honeypot dashboard` erneut, um Einstellungen zu ändern.'))
                         .setColor(getColor('info'))],
                     components: [],
                     flags: EPHEMERAL,

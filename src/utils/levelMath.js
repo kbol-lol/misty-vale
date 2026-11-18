@@ -29,7 +29,20 @@ export const LEVELING_DEFAULTS = {
         title: 'Level Up!',
         color: '#5865F2',
         imageUrl: null, // default image shown with every level-up message
-        levelImages: [], // [{ level, url }] - image for a level (used from that level until the next entry)
+        levelImages: [], // [{ level, url }] - image for a level (see imageMode)
+        // 'every':    default image on every level-up; a level image is used from its level on
+        // 'specific': only level-ups that have their own image (exact level image, role reward
+        //             image or custom level message image) show an image
+        imageMode: 'every',
+        // Used instead of the normal message when the level-up earns a new level role.
+        rewardMessage: {
+            enabled: false,
+            message: '{user} reached level **{level}** and earned the {role} role!',
+            title: 'New Role Unlocked!',
+            imageUrl: null,
+        },
+        // Custom message (and/or image) for one exact level. Takes priority over everything.
+        levelMessages: [], // [{ level, message, title, imageUrl }]
     },
     autoApplyRoles: true,
     roleRewards: [], // [{ level, roleId }]
@@ -130,6 +143,38 @@ export function normalizeLevelImages(list) {
     return [...byLevel.values()].sort((a, b) => a.level - b.level).slice(0, MAX_LEVEL_IMAGES);
 }
 
+export const MAX_LEVEL_MESSAGES = 25;
+export const IMAGE_MODES = ['every', 'specific'];
+
+function cleanText(value, max) {
+    return typeof value === 'string' ? value.trim().slice(0, max) : '';
+}
+
+/** Exact-level custom messages. An entry needs a message or an image. */
+export function normalizeLevelMessages(list) {
+    const byLevel = new Map();
+    for (const entry of Array.isArray(list) ? list : []) {
+        const level = Math.floor(Number(entry?.level));
+        if (!Number.isFinite(level) || level < 1 || level > MAX_LEVEL) continue;
+        const message = cleanText(entry?.message, 500);
+        const imageUrl = sanitizeImageUrl(entry?.imageUrl);
+        if (!message && !imageUrl) continue;
+        byLevel.set(level, { level, message, title: cleanText(entry?.title, 100), imageUrl });
+    }
+    return [...byLevel.values()].sort((a, b) => a.level - b.level).slice(0, MAX_LEVEL_MESSAGES);
+}
+
+export function normalizeRewardMessage(raw) {
+    const d = LEVELING_DEFAULTS.announce.rewardMessage;
+    const src = raw && typeof raw === 'object' ? raw : {};
+    return {
+        enabled: src.enabled === undefined ? d.enabled : Boolean(src.enabled),
+        message: cleanText(src.message, 500) || d.message,
+        title: typeof src.title === 'string' ? src.title.trim().slice(0, 100) : d.title,
+        imageUrl: sanitizeImageUrl(src.imageUrl),
+    };
+}
+
 function normalizeColor(value, fallback) {
     const text = String(value ?? '').trim();
     return /^#[0-9a-fA-F]{6}$/.test(text) ? text.toUpperCase() : fallback;
@@ -162,6 +207,9 @@ export function normalizeLevelingConfig(raw) {
             color: normalizeColor(announceSrc.color, d.announce.color),
             imageUrl: sanitizeImageUrl(announceSrc.imageUrl),
             levelImages: normalizeLevelImages(announceSrc.levelImages),
+            imageMode: IMAGE_MODES.includes(announceSrc.imageMode) ? announceSrc.imageMode : d.announce.imageMode,
+            rewardMessage: normalizeRewardMessage(announceSrc.rewardMessage),
+            levelMessages: normalizeLevelMessages(announceSrc.levelMessages),
         },
         autoApplyRoles: src.autoApplyRoles === undefined ? d.autoApplyRoles : Boolean(src.autoApplyRoles),
         roleRewards: normalizeRewards(src.roleRewards),
@@ -288,32 +336,117 @@ export function parseLevelImportText(raw) {
     return { entries, errors };
 }
 
-/** The image for a level: the entry with the highest level <= `level`, else the default image. */
+/**
+ * The normal image for a level.
+ * imageMode 'every':    the level image with the highest level <= `level`, else the default image.
+ * imageMode 'specific': only a level image set for exactly this level.
+ */
 export function pickLevelImage(announce, level) {
-    const match = [...(announce?.levelImages || [])].filter((i) => i.level <= level).pop();
+    const images = announce?.levelImages || [];
+    if (announce?.imageMode === 'specific') {
+        return images.find((i) => i.level === level)?.url || null;
+    }
+    const match = [...images].filter((i) => i.level <= level).pop();
     return match?.url || announce?.imageUrl || null;
+}
+
+/**
+ * The reward role earned by going from `previousLevel` to `level`
+ * (the highest reward with previousLevel < reward.level <= level), or null.
+ */
+export function findEarnedReward(rewards, previousLevel, level) {
+    const from = Number.isFinite(Number(previousLevel)) ? Number(previousLevel) : level - 1;
+    const earned = normalizeRewards(rewards).filter((r) => r.level > from && r.level <= level);
+    return earned.length ? earned[earned.length - 1] : null;
+}
+
+/**
+ * Decide which message, title and image a level-up uses.
+ * Priority: custom message for this exact level > role reward message > normal message.
+ * @returns {{ kind:'level'|'reward'|'default', message:string, title:string, imageUrl:string|null, reward:object|null }}
+ */
+export function resolveLevelUpAnnouncement(announce, { level, previousLevel, rewards = [], rolesEnabled = true }) {
+    const reward = rolesEnabled ? findEarnedReward(rewards, previousLevel, level) : null;
+    const custom = (announce.levelMessages || []).find((m) => m.level === level);
+    const rewardMsg = announce.rewardMessage;
+    const useReward = Boolean(reward && rewardMsg?.enabled);
+
+    if (custom) {
+        return {
+            kind: 'level',
+            message: custom.message || (useReward ? rewardMsg.message : announce.message),
+            title: custom.title || (useReward ? rewardMsg.title : '') || announce.title,
+            imageUrl: custom.imageUrl || (useReward ? rewardMsg.imageUrl : null) || pickLevelImage(announce, level),
+            reward,
+        };
+    }
+
+    if (useReward) {
+        return {
+            kind: 'reward',
+            message: rewardMsg.message || announce.message,
+            title: rewardMsg.title || announce.title,
+            imageUrl: rewardMsg.imageUrl || pickLevelImage(announce, level),
+            reward,
+        };
+    }
+
+    return {
+        kind: 'default',
+        message: announce.message,
+        title: announce.title,
+        imageUrl: pickLevelImage(announce, level),
+        reward,
+    };
+}
+
+function colorInt(value) {
+    return parseInt(String(value || '#5865F2').replace('#', ''), 16);
 }
 
 /**
  * Build the level-up message (plain object, ready for channel.send).
  * Plain text by default, optional embed with title, colour and image.
+ * `previousLevel`, `rewards`, `rolesEnabled` and `roleName` enable role reward and
+ * per-level messages; without them only the normal message is used.
  */
-export function buildLevelUpPayload(announce, { userId, username, level, serverName }) {
-    const text = renderTemplate(announce.message, {
+export function buildLevelUpPayload(announce, {
+    userId,
+    username,
+    level,
+    serverName,
+    previousLevel,
+    rewards = [],
+    rolesEnabled = true,
+    roleName = null,
+}) {
+    const resolved = resolveLevelUpAnnouncement(announce, { level, previousLevel, rewards, rolesEnabled });
+    const roleMention = resolved.reward ? `<@&${resolved.reward.roleId}>` : '';
+    const roleText = resolved.reward ? (roleName || 'new') : '';
+
+    const text = renderTemplate(resolved.message, {
         user: `<@${userId}>`,
         username,
         level: String(level),
         server: serverName,
+        role: roleMention,
     });
-    const image = pickLevelImage(announce, level);
+    const image = resolved.imageUrl;
+    // only the member is pinged; a {role} mention never pings the role
     const allowedMentions = { users: [userId] };
 
     if (announce.useEmbed) {
         const embed = {
             description: text.slice(0, 4000),
-            color: parseInt(String(announce.color || '#5865F2').replace('#', ''), 16),
+            color: colorInt(announce.color),
         };
-        const title = renderTemplate(announce.title, { user: username, username, level: String(level), server: serverName }).trim();
+        const title = renderTemplate(resolved.title, {
+            user: username,
+            username,
+            level: String(level),
+            server: serverName,
+            role: roleText,
+        }).trim();
         if (title) embed.title = title.slice(0, 256);
         if (image) embed.image = { url: image };
         // mentions inside embeds do not ping, so the ping goes in the message content
@@ -321,7 +454,7 @@ export function buildLevelUpPayload(announce, { userId, username, level, serverN
     }
 
     const payload = { content: text.slice(0, 2000), allowedMentions };
-    if (image) payload.embeds = [{ image: { url: image }, color: parseInt(String(announce.color || '#5865F2').replace('#', ''), 16) }];
+    if (image) payload.embeds = [{ image: { url: image }, color: colorInt(announce.color) }];
     return payload;
 }
 

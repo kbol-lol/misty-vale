@@ -15,6 +15,7 @@ import {
   resetCategoryCommands,
 } from '../../../services/commandAccessService.js';
 import { getGuildConfig } from '../../../services/config/guildConfig.js';
+import { createSearchButton, openDashboardSearch } from '../../../utils/dashboardSearch.js';
 
 export const DASHBOARD_CATEGORY_SELECT = 'cmdaccess_category';
 export const DASHBOARD_COMMAND_SELECT = 'cmdaccess_command';
@@ -24,6 +25,7 @@ export const DASHBOARD_DISABLE_ALL = 'cmdaccess_disable_all';
 export const DASHBOARD_RESET_COMMANDS = 'cmdaccess_reset_commands';
 export const DASHBOARD_REFRESH = 'cmdaccess_refresh';
 export const DASHBOARD_HOME = 'cmdaccess_home';
+export const DASHBOARD_SEARCH = 'cmdaccess_search';
 
 const STATUS = {
   enabled: '🟢',
@@ -205,6 +207,7 @@ export function buildOverviewComponents(guildId, snapshot) {
         .setLabel('Refresh')
         .setEmoji('🔄')
         .setStyle(ButtonStyle.Secondary),
+      createSearchButton(customId(DASHBOARD_SEARCH, guildId)),
     ),
   ];
 }
@@ -253,6 +256,8 @@ export function buildCategoryComponents(guildId, category) {
     ),
   ];
 
+  rows.push(new ActionRowBuilder().addComponents(createSearchButton(customId(DASHBOARD_SEARCH, guildId))));
+
   if (commandOptions.length > 0) {
     rows.unshift(
       new ActionRowBuilder().addComponents(
@@ -293,7 +298,56 @@ export async function buildDashboardView(client, guildId, guild, view = 'overvie
   };
 }
 
-export async function handleDashboardComponent(interaction, client) {
+async function buildCommandSearchEntries(client, guildId) {
+  const config = await getGuildConfig(client, guildId);
+  const snapshot = getCommandAccessSnapshot(client, config);
+  const entries = [];
+
+  for (const category of snapshot.categories) {
+    entries.push({
+      title: `${category.icon} ${category.displayName}`,
+      description: `${getCategoryStatus(category)} ${category.categoryDisabled ? 'Category off' : `${category.enabledCount}/${category.totalCount} enabled`}`,
+      location: 'Category',
+      keywords: [category.key, 'category'],
+      action: `cat:${category.key}`,
+    });
+
+    for (const command of category.commands) {
+      const enabled = category.enabledCommands.includes(command.name);
+      entries.push({
+        title: `/${command.name}`,
+        description: `${enabled ? '🟢 Enabled' : '🔴 Disabled'}${command.protected ? ' · 🔒 always on' : ''}`,
+        location: `Category: ${category.displayName}`,
+        keywords: [category.displayName, command.isSubcommand ? 'subcommand' : 'command'],
+        action: `cmd:${category.key}:${command.name}`.slice(0, 100),
+      });
+    }
+  }
+  return entries;
+}
+
+async function openCommandSearch(interaction, client, guildId, rootInteraction) {
+  return openDashboardSearch(interaction, {
+    dashboardName: 'Command Access',
+    placeholder: 'e.g. ban, economy, ticket, reactroles dashboard',
+    getEntries: () => buildCommandSearchEntries(client, guildId),
+    onPick: rootInteraction
+      ? async (pick, action) => {
+        await pick.deferUpdate();
+        const categoryKey = String(action).split(':')[1];
+        const view = await buildDashboardView(client, guildId, interaction.guild, 'category', categoryKey);
+        await rootInteraction.editReply({ embeds: [view.embed], components: view.components });
+      }
+      : null,
+  });
+}
+
+/**
+ * @param {object} [options]
+ * @param {import('discord.js').ChatInputCommandInteraction} [options.rootInteraction] the /commands dashboard
+ *   interaction, used so search results can open a category on the dashboard
+ */
+export async function handleDashboardComponent(interaction, client, { rootInteraction = null } = {}) {
   const parts = interaction.customId.split(':');
   const action = parts[0];
   const guildId = parts[1];
@@ -304,6 +358,10 @@ export async function handleDashboardComponent(interaction, client) {
       content: 'This dashboard belongs to another server.',
       ephemeral: true,
     });
+  }
+
+  if (action === DASHBOARD_SEARCH) {
+    return openCommandSearch(interaction, client, guildId, rootInteraction);
   }
 
   if (action === DASHBOARD_COMMAND_SELECT) {

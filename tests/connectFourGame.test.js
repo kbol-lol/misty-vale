@@ -1,12 +1,14 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import connectFourCommand from '../src/commands/Fun/connectfour.js';
+import connectFourCommand, { COLUMN_NUMBER_ROW, makeGameRows } from '../src/commands/Fun/connectfour.js';
 import {
   CONNECT_FOUR_COLUMNS,
   CONNECT_FOUR_ROWS,
   createConnectFourBoard,
   dropConnectFourDisc,
   hasConnectFourWin,
+  offerConnectFourDraw,
+  respondToConnectFourDraw,
   resolveConnectFourGame,
   surrenderConnectFourGame,
 } from '../src/utils/connectFourGame.js';
@@ -46,6 +48,9 @@ test('Connect Four buttons are handled by the game collector', () => {
     'connectfour:join',
     'connectfour:drop:1',
     'connectfour:surrender',
+    'connectfour:offer-draw',
+    'connectfour:accept-draw',
+    'connectfour:decline-draw',
   ]) {
     assert.equal(isCollectorManagedComponent(customId.split(':')[0]), true, customId);
   }
@@ -133,4 +138,43 @@ test('surrender declares the other player the winner and rejects spectators', ()
     winnerId: game.creatorId,
   });
   assert.equal(game.finished, true);
+});
+
+test('a draw offer blocks moves until the other player answers', () => {
+  const game = makeGame();
+  assert.deepEqual(offerConnectFourDraw(game, 'spectator'), { status: 'not_player' });
+  assert.deepEqual(offerConnectFourDraw(game, game.creatorId), { status: 'offered' });
+  assert.deepEqual(offerConnectFourDraw(game, game.opponentId), { status: 'pending' });
+  assert.equal(dropConnectFourDisc(game, game.creatorId, 0).status, 'draw_pending');
+  assert.deepEqual(respondToConnectFourDraw(game, game.creatorId, true), { status: 'own_offer' });
+
+  assert.deepEqual(respondToConnectFourDraw(game, game.opponentId, false), { status: 'declined' });
+  assert.equal(game.drawOfferId, null);
+  assert.equal(dropConnectFourDisc(game, game.creatorId, 0).status, 'dropped');
+  assert.deepEqual(respondToConnectFourDraw(game, game.opponentId, true), { status: 'missing' });
+});
+
+test('an accepted draw ends the game', () => {
+  const game = makeGame();
+  offerConnectFourDraw(game, game.opponentId);
+  assert.deepEqual(respondToConnectFourDraw(game, game.creatorId, true), { status: 'accepted' });
+  assert.equal(game.finished, true);
+  assert.deepEqual(offerConnectFourDraw(game, game.creatorId), { status: 'finished' });
+});
+
+test('game buttons offer a draw, and switch to accept/decline while an offer is open', () => {
+  const game = makeGame();
+  const idle = makeGameRows(game).map(row => row.toJSON());
+  assert.deepEqual(idle[2].components.map(c => c.custom_id), ['connectfour:surrender', 'connectfour:offer-draw']);
+  assert.equal(idle[0].components.every(c => !c.disabled), true);
+
+  offerConnectFourDraw(game, game.creatorId);
+  const pending = makeGameRows(game).map(row => row.toJSON());
+  assert.deepEqual(pending[2].components.map(c => c.custom_id), ['connectfour:surrender', 'connectfour:accept-draw', 'connectfour:decline-draw']);
+  assert.equal([...pending[0].components, ...pending[1].components].every(c => c.disabled), true);
+});
+
+test('column numbers use one emoji per column so they line up with the discs', () => {
+  assert.equal(COLUMN_NUMBER_ROW, '1️⃣2️⃣3️⃣4️⃣5️⃣6️⃣7️⃣');
+  assert.equal([...new Intl.Segmenter().segment(COLUMN_NUMBER_ROW)].length, CONNECT_FOUR_COLUMNS);
 });

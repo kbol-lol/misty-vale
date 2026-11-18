@@ -14,6 +14,7 @@ import {
 } from '../../services/scheduleService.js';
 import { buildScheduleDashboard } from './modules/schedule_dashboard.js';
 import { InteractionHelper } from '../../utils/interactionHelper.js';
+import { getDashboardLocale } from '../../utils/dashboardLocale.js';
 
 const ACTION_PERMISSIONS = {
   ban: PermissionFlagsBits.BanMembers,
@@ -177,7 +178,7 @@ export default {
       if (subcommand === 'dashboard') {
         const deferred = await InteractionHelper.safeDefer(interaction, { flags: MessageFlags.Ephemeral });
         if (!deferred) return;
-        const view = await buildScheduleDashboard(client, interaction.guildId);
+        const view = await buildScheduleDashboard(client, interaction.guildId, { locale: getDashboardLocale(interaction) });
         return await interaction.editReply({ embeds: [view.embed], components: view.components });
       }
 

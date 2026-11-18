@@ -22,6 +22,11 @@ import { getGuildConfig } from '../services/config/guildConfig.js';
 import { successEmbed } from '../utils/embeds.js';
 import { replyUserError, ErrorTypes, handleInteractionError } from '../utils/errorHandler.js';
 import { logger } from '../utils/logger.js';
+import { openDashboardSearch } from '../utils/dashboardSearch.js';
+import {
+  DASHBOARD_CATEGORIES,
+  DASHBOARD_CATEGORY_LABELS,
+} from '../utils/logging/loggingUi.js';
 import {
   buildLoggingDashboardView,
   buildLoggingCategoriesView,
@@ -45,6 +50,7 @@ export default {
     'log_dash_back',
     'log_dash_add_filter',
     'log_dash_remove_filter',
+    'log_dash_search',
   ],
 
   async execute(interaction) {
@@ -62,6 +68,10 @@ export default {
 
       if (interaction.customId === 'log_dash_back') {
         return handleBackToMain(interaction);
+      }
+
+      if (interaction.customId === 'log_dash_search') {
+        return handleSearch(interaction);
       }
 
       if (interaction.customId === 'log_dash_remove_filter') {
@@ -84,6 +94,43 @@ export default {
     }
   },
 };
+
+async function handleSearch(interaction) {
+  return openDashboardSearch(interaction, {
+    dashboardName: 'Logging',
+    placeholder: 'e.g. audit, reports, messages, ignore',
+    getEntries: async () => {
+      const status = await getLoggingStatus(interaction.client, interaction.guildId);
+      const channels = status.channels || {};
+      const ignore = status.ignore || { users: [], channels: [] };
+      const entries = [
+        { title: 'Audit Logging On / Off', description: status.enabled ? 'Enabled' : 'Disabled', location: 'Main dashboard → Audit Logging button', keywords: ['enable', 'disable', 'toggle'] },
+        { title: 'Set Audit Log Channel', description: channels.audit ? `<#${channels.audit}>` : 'Not configured', location: 'Main dashboard → menu', keywords: ['audit', 'log', 'channel'], action: 'set:audit' },
+        { title: 'Set Reports Channel', description: channels.reports ? `<#${channels.reports}>` : 'Not configured', location: 'Main dashboard → menu', keywords: ['report', 'channel'], action: 'set:reports' },
+        { title: 'Clear Audit Channel', location: 'Main dashboard → menu', keywords: ['remove', 'audit'], action: 'clear:audit' },
+        { title: 'Clear Reports Channel', location: 'Main dashboard → menu', keywords: ['remove', 'reports'], action: 'clear:reports' },
+        { title: 'Event Categories', description: 'Toggle which log types are sent', location: 'Main dashboard → menu', keywords: ['category', 'events', 'types'], action: 'view:categories' },
+        { title: 'Ignore Filters', description: `${ignore.users?.length || 0} users · ${ignore.channels?.length || 0} channels`, location: 'Main dashboard → menu', keywords: ['ignore', 'filter', 'skip', 'user', 'channel'], action: 'view:filters' },
+        { title: 'Ticket Log Channels', description: 'Configured in /ticket dashboard', location: 'Read-only here', keywords: ['ticket', 'transcript'] },
+      ];
+      for (const key of DASHBOARD_CATEGORIES) {
+        entries.push({
+          title: `${DASHBOARD_CATEGORY_LABELS[key] || key} logs`,
+          description: 'Event category',
+          location: 'Event Categories',
+          keywords: [key, 'category'],
+          action: 'view:categories',
+        });
+      }
+      return entries;
+    },
+    // Opening a result turns the search reply into that logging view; its buttons work as usual.
+    onPick: async (pick) => {
+      await handleLoggingMenuSelect(pick);
+      return { keepComponents: true };
+    },
+  });
+}
 
 async function handleRefresh(interaction) {
   if (isCategoriesView(interaction)) {

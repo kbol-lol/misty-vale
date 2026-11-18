@@ -5,6 +5,7 @@ const COLLECTOR_MANAGED_PREFIXES = [
   'cmdaccess_',
   'rps',
   'connectfour',
+  'dsearch_',
 ];
 
 export function isCollectorManagedComponent(customId = '') {
